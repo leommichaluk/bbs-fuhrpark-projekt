@@ -1,4 +1,9 @@
 export default defineNuxtConfig({
+  nitro: {
+    externals: {
+      inline: [/[\\/]node_modules[\\/]nuxt[\\/]dist[\\/]/]
+    }
+  },
   compatibilityDate: '2026-10-08',
   devtools: { enabled: true },
   modules: ['@nuxtjs/supabase'],
