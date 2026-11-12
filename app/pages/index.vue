@@ -29,7 +29,7 @@ const availabilityToday = (vehicle: Vehicle) => {
       <SearchField v-model="search" label="Fahrzeug suchen" placeholder="Modell oder Kennzeichen suchen" />
     </PageHeader>
 
-    <div class="g-main">
+    <div class="g-main" style="align-items: stretch">
       <section v-if="activeBooking && activeVehicle" class="card-dark fahrt" aria-labelledby="active-trip-heading" style="padding: 28px">
         <div class="fahrt-face"><VehicleIcon :type="activeVehicle.type" class="fzi-m" /></div>
         <div class="stack" style="flex: 1 1 260px; gap: 12px">

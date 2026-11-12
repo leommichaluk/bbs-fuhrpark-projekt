@@ -366,6 +366,8 @@ select.chip{appearance:none;padding-right:38px;background-image:url("data:image/
 .due .pk > i{width:42px;height:42px;font-size:15px}
 .due .pk > i.l{font-size:12px}
 .due .m{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
+.due-status{display:flex;align-items:center;gap:6px;font-weight:600;min-width:0}
+.due-status > span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .alt{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
 .alt:last-of-type{border-bottom:0}
 .alt .m{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
@@ -376,6 +378,7 @@ select.chip{appearance:none;padding-right:38px;background-image:url("data:image/
 .fahrt{display:flex;flex-wrap:wrap;gap:28px;align-items:center}
 .fahrt-face{background:var(--grund);border-radius:18px;padding:18px 22px;display:grid;place-items:center}
 .next{display:flex;flex-direction:column;gap:14px}
+.next > :last-child{margin-top:auto}
 .next .m{display:flex;flex-direction:column;gap:2px}
 .next .m small{font-size:13.5px}
 .fz .btn{align-self:stretch;margin:4px 8px 0}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Maintenance } from '~/utils/fleet'
+import type { Appointment, Maintenance } from '~/utils/fleet'
 
 const { db, findVehicle, flashMessage } = useFleet()
 const route = useRoute()
@@ -34,6 +34,13 @@ const mileageTooLow = computed(() => form.mileage !== null && form.mileage < veh
 const dueAppointments = computed(() => db.value.appointments
   .filter(a => !a.done && getAppointmentStatus(a) !== 'ok' && findVehicle(a.vehicleId)?.status !== 'ausser_betrieb')
   .sort((a, b) => a.dueDate.localeCompare(b.dueDate)))
+// Short one-liner for the narrow side list, e.g. "HU überfällig seit 09/2026", "Inspektion fällig 28.10."
+const dueText = (appointment: Appointment) => {
+  const date = formatAppointmentDate(appointment)
+  const name = appointment.type === 'Hauptuntersuchung' ? 'HU' : appointment.type
+  const state = getAppointmentStatus(appointment) === 'ueber' ? 'überfällig seit' : 'fällig'
+  return `${name} ${state} ${appointment.type === 'Inspektion' ? date.slice(0, 6) : date}`
+}
 
 const save = () => {
   if (form.mileage === null || mileageTooLow.value) return
@@ -130,8 +137,9 @@ const save = () => {
           <InspectionBadge :appointment="appointment" compact />
           <span class="m">
             <strong>{{ findVehicle(appointment.vehicleId)?.model }} <span class="xs muted" style="font-weight: 400">{{ findVehicle(appointment.vehicleId)?.plate }}</span></strong>
-            <span class="sm row" :style="{ gap: '6px', fontWeight: 600, color: getAppointmentStatus(appointment) === 'ueber' ? 'var(--rot-ink)' : 'var(--orange-ink)' }">
-              <span :class="`mk mk-${getAppointmentStatus(appointment)}`" aria-hidden="true" />{{ appointment.type }} {{ getAppointmentText(appointment) }}
+            <span class="sm due-status" :style="{ color: getAppointmentStatus(appointment) === 'ueber' ? 'var(--rot-ink)' : 'var(--orange-ink)' }">
+              <span :class="`mk mk-${getAppointmentStatus(appointment)}`" aria-hidden="true" />
+              <span>{{ dueText(appointment) }}</span>
             </span>
           </span>
         </div>
