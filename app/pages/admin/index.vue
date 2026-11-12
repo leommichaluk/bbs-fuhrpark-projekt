@@ -13,7 +13,7 @@ const filteredVehicles = computed(() => db.value.vehicles.filter(v =>
   && (!filter.type || v.type === filter.type)
   && (!filter.usage || v.pool === (filter.usage === 'pool'))
   && (!filter.onlyDue || dueAppointments(v.id).length)
-  && matches(`${v.model} ${v.plate}`, filter.search)))
+  && matches(`${v.name} ${v.plate}`, filter.search)))
 const isFiltered = computed(() => JSON.stringify(filter) !== JSON.stringify(EMPTY_FILTER))
 
 const subtitle = (vehicle: Vehicle) => `${vehicle.type}${vehicle.pool ? ' · Pool' : ''} · ${vehicle.plate}`
@@ -106,7 +106,7 @@ const statusDetail = (vehicle: Vehicle) => {
             <VehicleIcon :type="vehicle.type" class="fzi-m" />
           </div>
           <div class="fz-b">
-            <h3>{{ vehicle.model }}</h3>
+            <h3>{{ vehicle.name }}</h3>
             <span class="sub">{{ subtitle(vehicle) }}</span>
             <Odometer :km="vehicle.mileage" />
             <StatusBadge v-if="getStatus(vehicle) === 'aus'" status="aus" label="Fristen ruhen" />

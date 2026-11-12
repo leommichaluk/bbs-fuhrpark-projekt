@@ -1,5 +1,7 @@
 <script setup lang="ts">
-const { db, currentUser, findVehicle } = useFleet()
+const { db, currentUser, findVehicle, cancelBooking } = useFleet()
+const cancelError = ref('')
+const cancel = async (bookingId: string) => { cancelError.value = await cancelBooking(bookingId) }
 
 const openBookings = computed(() => db.value.bookings
   .filter(b => b.userId === currentUser.value.id && (b.status === 'gebucht' || b.status === 'uebernommen'))
@@ -15,6 +17,10 @@ const tripsInMonth = computed(() => allMyTrips.value.filter(t => t.pickupTime.st
 
 <template>
   <main class="main">
+    <div v-if="cancelError" class="meld meld-err" role="alert">
+      <AppIcon name="error" />
+      <span><strong>Stornieren fehlgeschlagen</strong>{{ cancelError }}</span>
+    </div>
     <PageHeader title="Meine Buchungen">
       <NuxtLink class="btn btn-p" to="/buchen"><AppIcon name="plus" />Poolfahrzeug buchen</NuxtLink>
     </PageHeader>
@@ -30,8 +36,8 @@ const tripsInMonth = computed(() => allMyTrips.value.filter(t => t.pickupTime.st
         <StatusBadge status="gebucht" :label="booking.status === 'uebernommen' ? 'läuft' : 'gebucht'" />
         <NuxtLink v-if="booking.status === 'uebernommen'" class="btn btn-p btn-sm" :to="`/fahrt/${booking.id}`">Zurückgeben</NuxtLink>
         <template v-else>
-          <NuxtLink v-if="booking.from.slice(0, 10) === NOW.slice(0, 10)" class="btn btn-p btn-sm" :to="`/fahrt/${booking.id}`">Übernehmen</NuxtLink>
-          <button type="button" class="btn btn-g btn-sm" @click="booking.status = 'storniert'">Stornieren</button>
+          <NuxtLink v-if="booking.from.slice(0, 10) === currentLocalTime().slice(0, 10)" class="btn btn-p btn-sm" :to="`/fahrt/${booking.id}`">Übernehmen</NuxtLink>
+          <button type="button" class="btn btn-g btn-sm" @click="cancel(booking.id)">Stornieren</button>
         </template>
       </div>
     </section>

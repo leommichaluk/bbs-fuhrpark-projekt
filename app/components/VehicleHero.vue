@@ -9,7 +9,7 @@ const { getStatus } = useFleet()
   <section class="card hero" aria-labelledby="vehicle-heading">
     <div class="hero-bild"><VehicleIcon :type="vehicle.type" class="fzi-l" /></div>
     <div class="hero-m">
-      <h2 id="vehicle-heading" style="font-size: 32px">{{ vehicle.model }}</h2>
+      <h2 id="vehicle-heading" style="font-size: 32px">{{ vehicle.name }}</h2>
       <div class="row" style="gap: 10px"><span class="kzt">{{ vehicle.plate }}</span><span class="muted">{{ vehicle.type }} · {{ vehicle.seats }} Sitze · {{ vehicle.pool ? 'Poolfahrzeug' : 'Dienstwagen' }}</span></div>
       <div class="row">
         <StatusBadge :status="getStatus(vehicle)" />

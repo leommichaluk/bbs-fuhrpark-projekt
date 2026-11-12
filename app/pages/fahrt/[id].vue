@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Pickup (step 1) and return (step 2) of one's own booking – like fahrzeug_uebernehmen/-zurueckgeben in migration.md
-const { db, currentUser, findVehicle, flashMessage, dueAppointments } = useFleet()
+const { supabase, db, write, currentUser, findVehicle, flashMessage, dueAppointments } = useFleet()
 const route = useRoute()
 const booking = computed(() => db.value.bookings.find(b => b.id === route.params.id && b.userId === currentUser.value.id))
 if (!booking.value || !['gebucht', 'uebernommen'].includes(booking.value.status)) throw createError({ statusCode: 404, statusMessage: 'Buchung nicht gefunden oder abgeschlossen' })
@@ -19,32 +19,26 @@ const mileageTooLow = computed(() => mileage.value !== null && mileage.value < r
 const distance = computed(() => mileage.value === null || mileageTooLow.value ? null : mileage.value - referenceMileage.value)
 const pickupBlockedReason = computed(() =>
   isReturn.value ? ''
-    : NOW < booking.value!.from ? `Übernahme erst ab ${formatDay(booking.value!.from)}, ${formatTime(booking.value!.from)} Uhr möglich.`
-      : NOW > booking.value!.until ? 'Der Buchungszeitraum ist abgelaufen.'
+    : currentLocalTime() < booking.value!.from ? `Übernahme erst ab ${formatDay(booking.value!.from)}, ${formatTime(booking.value!.from)} Uhr möglich.`
+      : currentLocalTime() > booking.value!.until ? 'Der Buchungszeitraum ist abgelaufen.'
         : vehicle.value.status !== 'verfuegbar' ? 'Das Fahrzeug ist nicht verfügbar.' : '')
 
-const submit = () => {
+const saveError = ref('')
+// Pickup/return only through the security-definer RPCs: they check booking owner, period, vehicle status and
+// mileage, write the logbook and advance the booking status in one transaction.
+const submit = async () => {
   if (mileage.value === null || mileageTooLow.value || pickupBlockedReason.value) return
-  if (isReturn.value) {
-    Object.assign(trip.value!, { returnTime: NOW, returnMileage: mileage.value, fuelLevel: fuelLevel.value, note: noteForLogistics.value })
-    booking.value!.status = 'zurueckgegeben'
-    flashMessage.value = { title: 'Zurückgegeben', text: `${formatKm(distance.value!)} km wurden ins Fahrtenbuch übernommen.` }
-  }
-  else {
-    db.value.trips.push({
-      id: crypto.randomUUID(),
-      bookingId: booking.value!.id,
-      vehicleId: vehicle.value.id,
-      userId: currentUser.value.id,
-      pickupTime: NOW,
-      pickupMileage: mileage.value,
-      purpose: purpose.value.trim(),
-    })
-    booking.value!.status = 'uebernommen'
-    flashMessage.value = { title: 'Übernommen', text: `Gute Fahrt mit ${vehicle.value.model}. Bitte bis ${formatUntil(booking.value!.until)} zurückgeben.` }
-  }
-  vehicle.value.mileage = mileage.value
-  navigateTo('/buchungen')
+  const wasReturn = isReturn.value
+  const km = mileage.value
+  const drivenKm = distance.value
+  saveError.value = await write(() => wasReturn
+    ? supabase.rpc('fahrzeug_zurueckgeben', { p_buchung: booking.value!.id, p_km: km, p_tank: fuelLevel.value, p_hinweis: noteForLogistics.value || null })
+    : supabase.rpc('fahrzeug_uebernehmen', { p_buchung: booking.value!.id, p_km: km, p_zweck: purpose.value.trim() }))
+  if (saveError.value) return
+  flashMessage.value = wasReturn
+    ? { title: 'Zurückgegeben', text: `${formatKm(drivenKm ?? 0)} km wurden ins Fahrtenbuch übernommen.` }
+    : { title: 'Übernommen', text: `Gute Fahrt mit ${vehicle.value.name}. Bitte bis ${formatUntil(booking.value!.until)} zurückgeben.` }
+  await navigateTo('/buchungen')
 }
 </script>
 
@@ -61,7 +55,8 @@ const submit = () => {
 
     <div class="g-main">
       <form class="card form" style="padding: 28px" @submit.prevent="submit">
-        <div v-if="pickupBlockedReason" class="meld meld-err" role="alert"><AppIcon name="error" /><span><strong>Übernahme nicht möglich</strong>{{ pickupBlockedReason }}</span></div>
+        <div v-if="saveError" class="meld meld-err" role="alert"><AppIcon name="error" /><span><strong>Speichern fehlgeschlagen</strong>{{ saveError }}</span></div>
+        <div v-else-if="pickupBlockedReason" class="meld meld-err" role="alert"><AppIcon name="error" /><span><strong>Übernahme nicht möglich</strong>{{ pickupBlockedReason }}</span></div>
 
         <fieldset class="fs">
           <legend><b>1</b>Kilometerstand</legend>
@@ -104,7 +99,7 @@ const submit = () => {
       <aside class="card stack" aria-label="Fahrzeug">
         <div class="hero-bild"><VehicleIcon :type="vehicle.type" class="fzi-m" /></div>
         <div class="row-sb">
-          <span class="stack-s" style="gap: 2px"><strong style="font-size: 18px">{{ vehicle.model }}</strong><span class="xs muted">{{ formatPeriod(booking.from, booking.until) }} Uhr</span></span>
+          <span class="stack-s" style="gap: 2px"><strong style="font-size: 18px">{{ vehicle.name }}</strong><span class="xs muted">{{ formatPeriod(booking.from, booking.until) }} Uhr</span></span>
           <span class="kzt">{{ vehicle.plate }}</span>
         </div>
         <div v-if="isReturn && trip" class="row-sb"><span class="xs muted b">ÜBERNAHME</span><Odometer :km="trip.pickupMileage" class="zw-q" /></div>

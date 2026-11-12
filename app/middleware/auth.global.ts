@@ -1,6 +1,7 @@
 import type { Profile, ProfileRow } from '~/utils/fleet'
 
-// Loads the signed-in user's profile once per session, signs out deactivated users and keeps non-admins out of /admin.
+// Loads the signed-in user's profile once per session, signs out deactivated users, keeps non-admins out of /admin
+// and reloads the fleet data on every navigation.
 // The redirect for signed-out users is done by @nuxtjs/supabase (redirectOptions in nuxt.config.ts).
 export default defineNuxtRouteMiddleware(async (to) => {
   if (to.path === '/anmeldung') return
@@ -19,4 +20,6 @@ export default defineNuxtRouteMiddleware(async (to) => {
     return navigateTo({ path: '/anmeldung', query: { grund: 'deaktiviert' } })
   }
   if (to.path.startsWith('/admin') && profile.value.role !== 'admin') return navigateTo('/')
+
+  await useFleet().reload()
 })

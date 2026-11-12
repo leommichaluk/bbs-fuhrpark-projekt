@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { db, findVehicle, userName, flashMessage, runningBooking, activeBookings } = useFleet()
+const { supabase, db, write, findVehicle, userName, flashMessage, runningBooking, activeBookings } = useFleet()
 const route = useRoute()
 const vehicle = computed(() => findVehicle(route.params.id as string))
 if (!vehicle.value) throw createError({ statusCode: 404, statusMessage: 'Fahrzeug nicht gefunden' })
@@ -19,22 +19,37 @@ const lastTrip = computed(() => trips.value[0])
 
 // Take out of service
 const decommissionDialog = ref<HTMLDialogElement>()
-const decommissionDate = ref(NOW.slice(0, 10))
+const decommissionDate = ref(currentLocalTime().slice(0, 10))
 const decommissionReason = ref('Verkauf geplant')
 const affectedBookings = computed(() => openBookings.value.filter(b => b.status === 'gebucht' && b.from >= decommissionDate.value))
-const decommission = () => {
-  affectedBookings.value.forEach((booking) => { booking.status = 'storniert' })
-  Object.assign(vehicle.value!, { status: 'ausser_betrieb', statusNote: `seit ${formatDate(decommissionDate.value)} · ${decommissionReason.value}` })
+const saveError = ref('')
+const decommission = async () => {
+  const affectedIds = affectedBookings.value.map(b => b.id)
+  saveError.value = await write(
+    () => supabase.from('buchungen').update({ status: 'storniert' }).in('id', affectedIds),
+    () => supabase.from('fahrzeuge').update({
+      status: 'ausser_betrieb',
+      status_notiz: `seit ${formatDate(decommissionDate.value)} · ${decommissionReason.value}`,
+    }).eq('id', vehicle.value!.id),
+  )
   decommissionDialog.value!.close()
-  flashMessage.value = { title: 'Außer Betrieb genommen', text: `${vehicle.value!.model} kann nicht mehr gebucht werden.` }
-  navigateTo('/admin')
+  if (saveError.value) return
+  flashMessage.value = { title: 'Außer Betrieb genommen', text: `${vehicle.value!.name} kann nicht mehr gebucht werden.` }
+  await navigateTo('/admin')
 }
-const recommission = () => Object.assign(vehicle.value!, { status: 'verfuegbar', statusNote: undefined })
+const recommission = async () => {
+  saveError.value = await write(() => supabase.from('fahrzeuge').update({ status: 'verfuegbar', status_notiz: null }).eq('id', vehicle.value!.id))
+}
 </script>
 
 <template>
   <main v-if="vehicle" class="main">
     <PageHeader title="Fahrzeug-Detail" back-to="/admin" back-label="Fahrzeuge" />
+
+    <div v-if="saveError" class="meld meld-err" role="alert">
+      <AppIcon name="error" />
+      <span><strong>Speichern fehlgeschlagen</strong>{{ saveError }}</span>
+    </div>
 
     <VehicleHero :vehicle="vehicle" :detail="heroDetail">
       <template #mileage>
@@ -99,10 +114,10 @@ const recommission = () => Object.assign(vehicle.value!, { status: 'verfuegbar',
         <div class="card-h"><h2>Stammdaten</h2><NuxtLink class="btn btn-s btn-sm" :to="`/admin/fahrzeuge/${vehicle.id}/bearbeiten`">Bearbeiten</NuxtLink></div>
         <dl class="dl">
           <dt>Kennzeichen</dt><dd><span class="kzt">{{ vehicle.plate }}</span></dd>
-          <dt>Hersteller und Modell</dt><dd>{{ vehicle.model }}</dd>
+          <dt>Hersteller und Modell</dt><dd>{{ vehicle.name }}</dd>
           <dt>Größe</dt><dd>{{ vehicle.type }} · {{ vehicle.seats }} Sitze</dd>
           <dt>Nutzung</dt><dd>{{ vehicle.pool ? 'Poolfahrzeug' : 'Dienstwagen' }}</dd>
-          <dt>Erstzulassung</dt><dd class="num">{{ vehicle.firstRegistration ?? '–' }}</dd>
+          <dt>Baujahr</dt><dd class="num">{{ vehicle.buildYear }}</dd>
           <dt>Kraftstoff</dt><dd>{{ vehicle.fuelType ?? '–' }}</dd>
         </dl>
       </template>
@@ -112,7 +127,7 @@ const recommission = () => Object.assign(vehicle.value!, { status: 'verfuegbar',
       <div class="row" style="gap: 16px; align-items: flex-start; flex-wrap: nowrap">
         <span class="dlg-icon"><span class="mk mk-aus" style="width: 22px; height: 22px; border-width: 2px" aria-hidden="true" /></span>
         <div class="stack-s">
-          <h2 id="decommission-heading">{{ vehicle.model }} außer Betrieb nehmen?</h2>
+          <h2 id="decommission-heading">{{ vehicle.name }} außer Betrieb nehmen?</h2>
           <span class="kzt" style="align-self: flex-start">{{ vehicle.plate }}</span>
           <p id="decommission-text" class="muted">Das Fahrzeug kann danach nicht mehr gebucht werden. Fristen ruhen, bis es wieder in Betrieb genommen wird.</p>
         </div>

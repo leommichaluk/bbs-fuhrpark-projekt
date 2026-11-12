@@ -1,9 +1,9 @@
 <script setup lang="ts">
-const { db, currentUser, findVehicle, flashMessage } = useFleet()
+const { supabase, db, write, currentUser, findVehicle, flashMessage } = useFleet()
 const route = useRoute()
 
 const bookableVehicles = computed(() => db.value.vehicles.filter(v => v.pool && v.status === 'verfuegbar'))
-const tomorrow = new Date(Date.parse(NOW.slice(0, 10)) + 864e5).toISOString().slice(0, 10)
+const tomorrow = new Date(Date.parse(currentLocalTime().slice(0, 10)) + 864e5).toISOString().slice(0, 10)
 const form = reactive({
   vehicleId: (route.query.fahrzeug as string) ?? bookableVehicles.value[0]?.id ?? '',
   dateFrom: `${tomorrow}T08:00`,
@@ -14,7 +14,7 @@ const selectedVehicle = computed(() => findVehicle(form.vehicleId))
 
 const periodError = computed(() =>
   form.dateFrom && form.dateUntil && form.dateUntil <= form.dateFrom ? `Das Ende muss nach dem Beginn liegen (${formatTime(form.dateFrom)} Uhr).`
-    : form.dateFrom && form.dateFrom < NOW ? 'Der Beginn liegt in der Vergangenheit.' : '')
+    : form.dateFrom && form.dateFrom < currentLocalTime() ? 'Der Beginn liegt in der Vergangenheit.' : '')
 const isPeriodValid = computed(() => !!form.dateFrom && !!form.dateUntil && !periodError.value)
 const conflictingBooking = computed(() => isPeriodValid.value ? findOverlappingBooking(db.value.bookings, form.vehicleId, form.dateFrom, form.dateUntil) : undefined)
 const freeVehicles = computed(() => isPeriodValid.value
@@ -32,19 +32,20 @@ const timelinePosition = (from: string, until: string) => {
 const bookingsOnDay = computed(() => db.value.bookings.filter(b =>
   b.vehicleId === form.vehicleId && b.status !== 'storniert' && b.from < `${timelineDay.value}T20:00` && `${timelineDay.value}T06:00` < b.until))
 
-const book = () => {
+const saveError = ref('')
+const book = async () => {
   if (!isPeriodValid.value || conflictingBooking.value || !selectedVehicle.value) return
-  db.value.bookings.push({
-    id: crypto.randomUUID(),
-    vehicleId: selectedVehicle.value.id,
-    userId: currentUser.value.id,
-    from: form.dateFrom,
-    until: form.dateUntil,
-    purpose: form.purpose.trim(),
-    status: 'gebucht',
-  })
-  flashMessage.value = { title: 'Gebucht', text: `${selectedVehicle.value.model} (${selectedVehicle.value.plate}), ${formatPeriod(form.dateFrom, form.dateUntil)} Uhr.` }
-  navigateTo('/buchungen')
+  // The DB exclusion constraint is the real guard against overlaps (someone may have booked in the meantime)
+  saveError.value = await write(() => supabase.from('buchungen').insert({
+    fahrzeug_id: selectedVehicle.value!.id,
+    user_id: currentUser.value.id,
+    von: toTimestamp(form.dateFrom),
+    bis: toTimestamp(form.dateUntil),
+    zweck: form.purpose.trim(),
+  }))
+  if (saveError.value) return
+  flashMessage.value = { title: 'Gebucht', text: `${selectedVehicle.value.name} (${selectedVehicle.value.plate}), ${formatPeriod(form.dateFrom, form.dateUntil)} Uhr.` }
+  await navigateTo('/buchungen')
 }
 </script>
 
@@ -54,7 +55,11 @@ const book = () => {
 
     <div class="g-main">
       <form class="card form" @submit.prevent="book">
-        <div v-if="conflictingBooking" class="meld meld-err" role="alert">
+        <div v-if="saveError" class="meld meld-err" role="alert">
+          <AppIcon name="error" />
+          <span><strong>Buchung fehlgeschlagen</strong>{{ saveError }}</span>
+        </div>
+        <div v-else-if="conflictingBooking" class="meld meld-err" role="alert">
           <AppIcon name="error" />
           <span><strong>Zeitraum überschneidet sich</strong>Im gewählten Zeitraum ist {{ selectedVehicle?.plate }} bereits gebucht ({{ formatPeriod(conflictingBooking.from, conflictingBooking.until) }} Uhr).</span>
         </div>
@@ -64,7 +69,7 @@ const book = () => {
           <div class="feld">
             <label for="vehicle">Poolfahrzeug</label>
             <select id="vehicle" v-model="form.vehicleId" class="inp" required>
-              <option v-for="option in bookableVehicles" :key="option.id" :value="option.id">{{ option.model }} · {{ option.type }} · {{ option.plate }}</option>
+              <option v-for="option in bookableVehicles" :key="option.id" :value="option.id">{{ option.name }} · {{ option.type }} · {{ option.plate }}</option>
             </select>
           </div>
         </fieldset>

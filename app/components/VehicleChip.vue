@@ -7,5 +7,5 @@ defineProps<{ vehicle: Vehicle, subtitle?: string }>()
 
 <template>
   <span class="ico"><VehicleIcon :type="vehicle.type" class="fzi-s" /></span>
-  <span class="m"><strong>{{ vehicle.model }}</strong><small class="xs muted">{{ subtitle ?? `${vehicle.type} · ${vehicle.plate}` }}</small></span>
+  <span class="m"><strong>{{ vehicle.name }}</strong><small class="xs muted">{{ subtitle ?? `${vehicle.type} · ${vehicle.plate}` }}</small></span>
 </template>

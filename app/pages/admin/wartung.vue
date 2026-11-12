@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import type { Appointment, Maintenance } from '~/utils/fleet'
 
-const { db, findVehicle, flashMessage } = useFleet()
+const { supabase, db, write, findVehicle, flashMessage } = useFleet()
 const route = useRoute()
 
 // Maintenance type → the appointment it completes (null = no new deadline)
 const MAINTENANCE_TYPES = { HU: 'Hauptuntersuchung', Inspektion: 'Inspektion', Wartung: null, Reparatur: null } as const
 const activeVehicles = computed(() => db.value.vehicles.filter(v => v.status !== 'ausser_betrieb'))
 const form = reactive({
-  vehicleId: (route.query.fahrzeug as string) ?? activeVehicles.value[0]!.id,
-  type: 'HU' as Maintenance['type'],
-  date: NOW.slice(0, 10),
+  vehicleId: (route.query.fahrzeug as string) ?? activeVehicles.value[0]?.id ?? '',
+  type: 'HU' as keyof typeof MAINTENANCE_TYPES,
+  date: currentLocalTime().slice(0, 10),
   mileage: null as number | null,
   performedBy: '',
   description: '',
@@ -23,7 +23,7 @@ watchEffect(() => {
   const year = String(+form.date.slice(0, 4) + (form.type === 'HU' ? 2 : 1))
   form.nextDueDate = form.type === 'HU' ? `${year}-${form.date.slice(5, 7)}` : `${year}${form.date.slice(4)}`
 })
-watch(() => form.vehicleId, () => { form.mileage = vehicle.value.mileage }, { immediate: true })
+watch(() => form.vehicleId, () => { form.mileage = vehicle.value?.mileage ?? null }, { immediate: true })
 
 // Preview of the plaque the new deadline will get
 const newAppointment = computed(() => appointmentType.value && {
@@ -42,31 +42,29 @@ const dueText = (appointment: Appointment) => {
   return `${name} ${state} ${appointment.type === 'Inspektion' ? date.slice(0, 6) : date}`
 }
 
-const save = () => {
+const saveError = ref('')
+const save = async () => {
   if (form.mileage === null || mileageTooLow.value) return
-  db.value.maintenanceRecords.push({
-    id: crypto.randomUUID(),
-    vehicleId: vehicle.value.id,
-    type: form.type,
-    date: form.date,
-    mileage: form.mileage,
-    performedBy: form.performedBy,
-    description: form.description,
-  })
-  vehicle.value.mileage = form.mileage
-  if (appointmentType.value) {
-    const openAppointment = db.value.appointments.find(a => a.vehicleId === vehicle.value.id && a.type === appointmentType.value && !a.done)
-    if (openAppointment) openAppointment.done = true
-    db.value.appointments.push({
-      id: crypto.randomUUID(),
-      vehicleId: vehicle.value.id,
-      type: appointmentType.value,
-      dueDate: newAppointment.value!.dueDate,
-      done: false,
-    })
-  }
-  flashMessage.value = { title: 'Eintrag gespeichert', text: `${form.type} für ${vehicle.value.model} (${vehicle.value.plate}).` }
-  navigateTo(`/admin/fahrzeuge/${vehicle.value.id}`)
+  const openAppointment = db.value.appointments.find(a => a.vehicleId === vehicle.value.id && a.type === appointmentType.value && !a.done)
+  saveError.value = await write(
+    () => supabase.from('wartungen').insert({
+      fahrzeug_id: vehicle.value.id,
+      art: form.type,
+      datum: form.date,
+      kilometerstand: form.mileage,
+      durchgefuehrt_von: form.performedBy,
+      beschreibung: form.description,
+    }),
+    // Mileage never decreases (DB trigger), so only raise it
+    () => supabase.from('fahrzeuge').update({ kilometerstand: Math.max(form.mileage!, vehicle.value.mileage) }).eq('id', vehicle.value.id),
+    ...(openAppointment ? [() => supabase.from('termine').update({ erledigt: true }).eq('id', openAppointment.id)] : []),
+    ...(newAppointment.value
+      ? [() => supabase.from('termine').insert({ fahrzeug_id: vehicle.value.id, art: newAppointment.value!.type, faellig_am: newAppointment.value!.dueDate })]
+      : []),
+  )
+  if (saveError.value) return
+  flashMessage.value = { title: 'Eintrag gespeichert', text: `${form.type} für ${vehicle.value.name} (${vehicle.value.plate}).` }
+  await navigateTo(`/admin/fahrzeuge/${vehicle.value.id}`)
 }
 </script>
 
@@ -76,12 +74,16 @@ const save = () => {
 
     <div class="g-main">
       <form class="card form" @submit.prevent="save">
+        <div v-if="saveError" class="meld meld-err" role="alert">
+          <AppIcon name="error" />
+          <span><strong>Speichern fehlgeschlagen</strong>{{ saveError }}</span>
+        </div>
         <fieldset class="fs">
           <legend><b>1</b>Fahrzeug und Art</legend>
           <div class="feld">
             <label for="vehicle">Fahrzeug</label>
             <select id="vehicle" v-model="form.vehicleId" class="inp">
-              <option v-for="option in activeVehicles" :key="option.id" :value="option.id">{{ option.plate }} · {{ option.model }}</option>
+              <option v-for="option in activeVehicles" :key="option.id" :value="option.id">{{ option.plate }} · {{ option.name }}</option>
             </select>
           </div>
           <div class="feld">
@@ -136,7 +138,7 @@ const save = () => {
         <div v-for="appointment in dueAppointments" :key="appointment.id" class="due">
           <InspectionBadge :appointment="appointment" compact />
           <span class="m">
-            <strong>{{ findVehicle(appointment.vehicleId)?.model }} <span class="xs muted" style="font-weight: 400">{{ findVehicle(appointment.vehicleId)?.plate }}</span></strong>
+            <strong>{{ findVehicle(appointment.vehicleId)?.name }} <span class="xs muted" style="font-weight: 400">{{ findVehicle(appointment.vehicleId)?.plate }}</span></strong>
             <span class="sm due-status" :style="{ color: getAppointmentStatus(appointment) === 'ueber' ? 'var(--rot-ink)' : 'var(--orange-ink)' }">
               <span :class="`mk mk-${getAppointmentStatus(appointment)}`" aria-hidden="true" />
               <span>{{ dueText(appointment) }}</span>
