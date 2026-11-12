@@ -10,8 +10,9 @@ Fleet management ("Fuhrparkverwaltung") for SensorTec Automation GmbH. Nuxt 4 + 
 
 - **Code identifiers in English and descriptive**: variables, functions, components, composables, types (`decommissionDialog`, `dateFrom`, `findOverlappingBooking`, `useFleet` — not `dlg`, `ab`, `ueberschneidung`).
 - **Data fields and collections in English too** (`booking.purpose`, `vehicle.plate`, `appointment.dueDate`, `db.value.vehicles`), camelCase.
-- **German stays German**: the SQL schema in `migration.md` (`fahrzeuge.kennzeichen`, …), enum values (`gebucht`, `ausser_betrieb`, …), route paths (`/buchen`, `/admin/wartung`), all UI text, and the design's CSS class names/modifiers (`st-gebucht`, `mk-aus`, `.feld`, `.btn-p`).
+- **German stays German**: the SQL schema (`fahrzeuge.kennzeichen`, …; mapped to English fields in `app/utils/fleet.ts`), enum values (`gebucht`, `ausser_betrieb`, …), route paths (`/buchen`, `/admin/wartung`), all UI text, and the design's CSS class names/modifiers (`st-gebucht`, `mk-aus`, `.feld`, `.btn-p`).
 - Arrow functions everywhere (`const save = () => {}`), `<script setup lang="ts">` in components.
+- Commits: one meaningful line, no body, no `Co-Authored-By`/Claude attribution (also not in PRs) — the team needs clear ownership.
 - Keep it minimal: no abstractions for a single use, prefer native HTML (`<dialog>`, `<input type="datetime-local|date|month">`, `required`) over libraries. Deliberate shortcuts with a known ceiling get a `// ponytail:` comment naming the upgrade path.
 
 ## Commands
@@ -33,12 +34,13 @@ Tests cover only pure logic in `app/utils/fleet.ts` and import it with the `.ts`
 
 TypeScript: the root `tsconfig.json` only references `.nuxt/tsconfig.*.json` (Nuxt 4 layout). If the IDE reports `Cannot find module '~/…'`, run `npx nuxi prepare` and restart the TS server. `test/` is added to the node tsconfig via `typescript.nodeTsConfig` in `nuxt.config.ts` (`allowImportingTsExtensions`, `@types/node`).
 
-`.env` must contain `NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_KEY` (anon/publishable key, from Supabase → Project Settings → API).
+`.env` must contain `NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_KEY` (publishable key, from Supabase → Project Settings → API). No secret/service key is used anywhere.
 
 ## Architecture
 
 - Nuxt 4 `app/` directory layout: file-based routes in `app/pages/`, auto-imported `components/`, `composables/`, `utils/`. One layout (`app/layouts/default.vue`, sidebar nav that switches between employee and admin items by route); `anmeldung.vue` uses `layout: false`. Each page's root element is `<main class="main">` and starts with `<PageHeader>`.
-- Modules: `@nuxtjs/supabase`, `@nuxt/icon`, `@nuxt/image`. Tailwind v4 via `@tailwindcss/vite`, entry `app/assets/css/main.css`.
+- Modules: only `@nuxtjs/supabase`. Tailwind v4 via `@tailwindcss/vite`, entry `app/assets/css/main.css`.
+- Shared components (`app/components/`): `PageHeader` (title, back link, user, flash message), `AppIcon`, `VehicleIcon`, `VehicleHero`, `VehicleChip`, `StatusBadge`, `InspectionBadge`, `Odometer`, `MileageInput` (`v-model` is `number | null`, parses "86.240"), `LogbookTable`, `BookingRow`, `TabBar`, `SearchField`, `EmptyState`. Reuse them before writing markup.
 
 ### Routes
 
@@ -53,35 +55,47 @@ TypeScript: the root `tsconfig.json` only references `.nuxt/tsconfig.*.json` (Nu
 | | `/admin/fahrzeuge/[id]` | Detail with tabs + "Außer Betrieb nehmen" dialog |
 | | `/admin/fahrzeuge/[id]/bearbeiten` | Edit with live validation; id `neu` creates a vehicle |
 | | `/admin/wartung` (`?fahrzeug=id`) | Record maintenance, completes the appointment and sets the next deadline |
-| | `/admin/benutzer` | Users: filter, activate/deactivate, create |
-| — | `/anmeldung` | Login (mock) |
+| | `/admin/benutzer` | Users: filter, activate/deactivate, switch role (not for yourself); new accounts are created in the Supabase dashboard |
+| — | `/anmeldung` | Login with Supabase Auth (email + password) |
 
-### Current phase: mock data, no Supabase/API yet
+### Auth
 
-- All data lives in `MOCK_DATA` in `app/utils/fleet.ts` (types, mock rows, pure helpers for status, validation, formatting). Entity types (`Vehicle`, `Booking`, `Trip`, …) use English camelCase fields; `MOCK_DATA` keys are `vehicles`, `appointments`, `bookings`, `trips`, `maintenanceRecords`, `profiles`. When connecting Supabase, map the German snake_case columns (`fahrzeuge.kennzeichen` → `plate`, `buchungen.zweck` → `purpose`, …) in one place in `useFleet`, not in pages.
-- `useFleet()` (`app/composables/useFleet.ts`) puts a clone into `useState('fleet')` and returns `db`, `currentUser`, `findVehicle`, `getStatus`, `userName`, `runningBooking`, `activeBookings`, `dueAppointments`, `flashMessage`. Pages mutate `db.value.*` directly — this is the one place to replace with Supabase queries/RPCs later.
-- No login: `currentUser` follows the route (`/admin/*` → Katrin Albers, admin; everything else → Thomas Wessels, employee). The login page accepts any active mock email (`k.albers@…`, `t.wessels@sensortec-automation.de`) with any password.
-- "Now" is the fixed constant `NOW = '2026-10-13T10:00'` so the mock data stays consistent. Date-times are local strings in `datetime-local` format (`YYYY-MM-DDTHH:MM`) and are compared as strings; switch to real time/`timestamptz` with Supabase.
-- Client-side rules mirror the DB constraints (overlap, mileage never decreasing, plate format/uniqueness) for live feedback — the DB stays the source of truth.
-- Success messages after an action: set `flashMessage` before `navigateTo`; the next page's `PageHeader` shows it once and clears it.
-- A full page reload resets all mock state (it is per-request `useState`).
+- `@nuxtjs/supabase` with `redirect: true` sends signed-out users to `/anmeldung` (`redirectOptions` in `nuxt.config.ts`).
+- `app/middleware/auth.global.ts` loads the user's row from `profiles` once per session into `useState('profile')`, signs out deactivated users (`/anmeldung?grund=deaktiviert`), redirects non-admins away from `/admin/*`, and reloads the fleet data on every navigation.
+- `useSupabaseUser()` (v2) returns JWT claims: the user id is `user.value.sub`, not `.id`.
+- The sidebar shows admin or employee navigation by route; admins can open employee pages too.
 
-### Later: Supabase
+### Data access (`useFleet`, `app/utils/fleet.ts`)
 
-- Auth is not wired up yet: `supabase.redirect: false` and `supabase.types: false` in `nuxt.config.ts`. Once types are generated (`npx supabase gen types` → `app/types/database.types.ts`) remove `types: false`; set `redirect: true` once a login exists.
-- Data access pattern: `useSupabaseClient()` inside `useAsyncData`, throwing on `error`. Pickup/return must call the RPCs, not write tables directly.
+- `useFleet()` holds all tables in `useState('fleet')` as `db.value.{vehicles, appointments, bookings, trips, maintenanceRecords, profiles}` and returns helpers (`findVehicle`, `getStatus`, `userName`, `runningBooking`, `activeBookings`, `dueAppointments`), `currentUser`, `flashMessage`, the shared `supabase` client, `reload()`, `write()` and `cancelBooking()`. RLS decides what each user gets (employees: all vehicles/bookings, only their own trips and profile).
+- Reading: `reload()` loads every table and maps rows with `toVehicle`, `toBooking`, … (German snake_case → English camelCase). Never read Supabase rows directly in pages. `ponytail:` loading everything per navigation is fine for a few dozen vehicles; move to per-page queries or Realtime when data grows.
+- Writing: `const message = await write(() => supabase.from('…').insert/update(...), …)` runs operations in order, stops at the first error, reloads on success and returns a German error text (`toUserMessage`: 23P01 overlap, 23505 duplicate plate, 42501 permission, SQL `raise exception` texts pass through) or `''`. Pages show it in a `meld meld-err` box. Write payloads use the German column names.
+- Pickup/return must call the RPCs `fahrzeug_uebernehmen` / `fahrzeug_zurueckgeben`, never write `fahrten`/`buchungen` directly.
+- Time: the app works with Berlin wall-clock strings `YYYY-MM-DDTHH:MM` (same format as `<input type="datetime-local">`, comparable as strings). `toLocalDateTime(timestamp)` converts DB timestamps (pinned to Europe/Berlin, so SSR and browser agree), `toTimestamp(local)` converts back for writes, `currentLocalTime()` is "now".
+- Client-side checks mirror the DB rules (overlap, mileage never decreasing, plate format/uniqueness) for live feedback; the DB constraints stay the real guard.
+- Success messages: set `flashMessage` before `navigateTo`; the next page's `PageHeader` shows it once and clears it.
+- `ponytail:` the client is untyped (`useSupabaseClient<any>()` in `useFleet`, `supabase.types: false`) until `npx supabase gen types` → `app/types/database.types.ts` is set up; then type the client and drop the `any`.
+- The Supabase project is hosted and shared. When testing against it, prefer reversible actions (book → cancel) and say what test data was left behind.
 
-## Database (`migration.md`)
+## Database
 
-`migration.md` holds the full SQL schema + RLS, to be run in the Supabase SQL editor. Business rules live in the database, not the app:
+Business rules live in the database, not the app. SQL is run manually in the Supabase SQL editor (no Supabase CLI yet), in this order:
 
-- Tables: `profiles` (role `admin` | `mitarbeiter`, `aktiv` flag; auto-created by trigger on `auth.users` insert), `fahrzeuge`, `wartungen`, `termine` (HU/Inspektion/Wartung due dates), `buchungen`, `fahrten` (logbook, one per booking), `tankungen`.
+1. `migration.md` – base schema, functions, RLS.
+2. `supabase/migrations/*.sql` in filename order – changes since then (idempotent). New schema changes go into a new timestamped file there; never edit an applied one.
+3. `supabase/seed/01_admin.sql` – first admin (Katrin Albers). Set the password locally, never commit it (placeholder `CHANGE_ME` is refused).
+4. Optional `supabase/seed/02_demo_data.sql` – the design's demo data (14 vehicles, appointments, bookings, logbook, 7 more accounts with one shared password), all dates relative to the day it runs. Runs only once.
+
+Schema facts:
+
+- Tables: `profiles` (`rolle` admin | mitarbeiter, `aktiv`, `abteilung`; auto-created by trigger on `auth.users` insert), `fahrzeuge` (`typ` Kleinwagen | Kombi | Transporter | Großraumtransporter, `hersteller` + `modell` → `vehicle.name`, `baujahr`, `status_notiz`, `kraftstoff`, `tankkarte`), `termine` (`art` Hauptuntersuchung | Inspektion | UVV-Prüfung | Wartung), `wartungen` (`art` HU | Inspektion | Wartung | Reparatur | Werkstattaufenthalt, `durchgefuehrt_von`), `buchungen`, `fahrten` (logbook, one per booking, `tank`, `hinweis`), `tankungen` (not used by the UI yet).
 - Booking overlaps are prevented by a GiST exclusion constraint per vehicle (ignoring `storniert`).
 - Mileage can never decrease (trigger `km_nicht_sinken`); `fahrten.rueckgabe_km >= uebernahme_km`.
-- Vehicle pickup/return go only through the `security definer` RPCs `fahrzeug_uebernehmen(p_buchung, p_km, p_zweck)` and `fahrzeug_zurueckgeben(p_buchung, p_km)`; they write `fahrten`, update `fahrzeuge.kilometerstand` and advance `buchungen.status` (`gebucht` → `uebernommen` → `zurueckgegeben`).
-- RLS via `is_admin()` / `is_aktiv()`: admins write everything; employees read vehicles/dates/bookings, book only pool vehicles (`pool = true`, not `ausser_betrieb`) in their own name, may only cancel their own `gebucht` bookings, and see only their own `fahrten`/`tankungen`.
-- With RLS enabled, a table without a matching policy returns `[]` — check policies first when a query comes back empty.
-- First admin: register, then `update profiles set rolle = 'admin' where email = '…';`.
+- Pickup/return only via the `security definer` RPCs `fahrzeug_uebernehmen(p_buchung, p_km, p_zweck)` and `fahrzeug_zurueckgeben(p_buchung, p_km, p_tank, p_hinweis)`; they check owner, period, vehicle status, write `fahrten`, update `fahrzeuge.kilometerstand` and advance `buchungen.status` (`gebucht` → `uebernommen` → `zurueckgegeben`).
+- RLS via `is_admin()` / `is_aktiv()`: admins write everything; employees read vehicles/appointments/bookings, book only pool vehicles (`pool = true`, not `ausser_betrieb`) in their own name, may only cancel their own `gebucht` bookings, and see only their own `fahrten`/`tankungen`/profile. There are no policies for `anon`: signed out, every table returns `[]`.
+- A query that unexpectedly returns `[]` usually means a missing policy, an inactive profile, or no session.
+- New accounts: Supabase dashboard → Authentication → Add user (profile is created as `mitarbeiter`), then make admins in `/admin/benutzer`.
+- SQL can be checked locally without touching the hosted DB using PGlite (Postgres in WASM, with `pgcrypto`/`btree_gist`) and a small `auth` schema stub.
 
 ## UI design
 
@@ -89,7 +103,7 @@ The target UI is a claude.ai Design canvas ("Fuhrpark – SensorTec Automation",
 
 - The design CSS is copied almost verbatim into `app/assets/css/main.css` (plus page-specific rules from the artboards). Style with these classes, not ad-hoc Tailwind — keep markup close to the artboards so design updates can be diffed. Tailwind's preflight is intentionally not imported (it would override the design's base styles); theme + utilities are available.
 - Fonts come from Google Fonts via `app.head` in `nuxt.config.ts`.
-- Icons: `<AppIcon name="…">` with the design's inline SVG paths (exact look, works offline) — not `@nuxt/icon`. Vehicle silhouettes per size: `<VehicleIcon :type>`.
+- Icons: `<AppIcon name="…">` with the design's inline SVG paths (exact look, works offline) — no icon library; add new paths to `AppIcon`. Vehicle silhouettes per size: `<VehicleIcon :type>`.
 - Display status (`getDisplayStatus`): `ok | gebucht | werkstatt | aus`, derived from `vehicle.status` plus a running booking (`uebernommen` → "in Nutzung"). Appointment status (`getAppointmentStatus`): `ok | faellig` (≤ 30 days) `| ueber`. These values double as CSS modifiers.
 - Only the desktop artboards are implemented; below 860 px the sidebar becomes a top bar (responsive CSS). The separate tablet/phone artboards (bottom nav, filter sheet) are not built.
-- Schema mismatches to resolve before Supabase: the design's size categories (Kleinwagen, Kombi, Transporter, Großraumtransporter) vs. the `fahrzeuge.typ` check constraint; "UVV-Prüfung" is not an allowed `termine.art`; manufacturer + model are one field (`model`) in the UI but two columns in the schema; mock-only fields (`seats`, `statusNote`, `firstRegistration`, `fuelType`, `fuelCard`, `fuelLevel`, `note`, `performedBy`, `department`) have no columns yet.
+- Deviations from the design: the vehicle form has separate fields for Hersteller, Modell and Baujahr (DB columns); Stammdaten shows Baujahr instead of Erstzulassung; seats are derived from the size (`seatsFor`), not stored; the login page has no "Passwort vergessen" flow and no attempt counter (Supabase rate-limits).
