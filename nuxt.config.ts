@@ -23,7 +23,9 @@ export default defineNuxtConfig({
   },
   vite: { plugins: [tailwindcss()] },
   supabase: {
-    redirect: false, // kein Auth vorerst – auf true setzen, sobald Login existiert
+    // Nicht angemeldet → /anmeldung; Profil laden und Admin-Bereich schützen: app/middleware/auth.global.ts
+    redirect: true,
+    redirectOptions: { login: '/anmeldung', callback: '/anmeldung' },
     types: false, // `npx supabase gen types` → app/types/database.types.ts, dann Option entfernen
   },
 })

@@ -115,6 +115,12 @@ export const MOCK_DATA = {
   ],
 }
 
+// ---------- Supabase rows (German columns, see migration.md) → app entities ----------
+export interface ProfileRow { id: string, email: string, name: string, rolle: Profile['role'], aktiv: boolean, abteilung: string }
+export const PROFILE_COLUMNS = 'id, email, name, rolle, aktiv, abteilung'
+export const toProfile = (row: ProfileRow): Profile =>
+  ({ id: row.id, email: row.email, name: row.name || row.email, role: row.rolle, active: row.aktiv, department: row.abteilung })
+
 // ---------- Status ----------
 export const STATUS_LABEL: Record<string, string> = { ok: 'verfügbar', gebucht: 'in Nutzung', werkstatt: 'Werkstatt', aus: 'außer Betrieb', ueber: 'überfällig', faellig: 'fällig' }
 

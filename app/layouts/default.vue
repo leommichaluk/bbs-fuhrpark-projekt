@@ -1,6 +1,14 @@
 <script setup lang="ts">
 const route = useRoute()
+const supabase = useSupabaseClient()
+const profile = useState('profile')
 const isAdmin = computed(() => route.path.startsWith('/admin'))
+
+const logout = async () => {
+  await supabase.auth.signOut()
+  profile.value = null
+  await navigateTo('/anmeldung')
+}
 
 const NAV_ITEMS = {
   admin: [
@@ -31,7 +39,7 @@ const NAV_ITEMS = {
         </ul>
         <div class="side-foot">
           <span class="rolle">{{ isAdmin ? 'Administrator' : 'Mitarbeiter' }}</span>
-          <NuxtLink to="/anmeldung"><AppIcon name="logout" class="i" />Abmelden</NuxtLink>
+          <button type="button" @click="logout"><AppIcon name="logout" class="i" />Abmelden</button>
         </div>
       </nav>
       <slot />

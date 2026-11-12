@@ -1,18 +1,28 @@
 <script setup lang="ts">
+import type { ProfileRow } from '~/utils/fleet'
+
 definePageMeta({ layout: false })
 
-const { db } = useFleet()
+const supabase = useSupabaseClient()
+const route = useRoute()
 const email = ref('')
 const password = ref('')
-const attemptsLeft = ref(3)
-const hasError = ref(false)
+const isSubmitting = ref(false)
+const errorMessage = ref(route.query.grund === 'deaktiviert' ? 'Ihr Zugang ist deaktiviert. Bitte wenden Sie sich an die Logistik.' : '')
 
-// ponytail: mock login – any active mock address, any password
-const login = () => {
-  const user = db.value.profiles.find(p => p.active && p.email === email.value.trim().toLowerCase())
-  if (user && password.value) return navigateTo(user.role === 'admin' ? '/admin' : '/')
-  hasError.value = true
-  attemptsLeft.value = Math.max(0, attemptsLeft.value - 1)
+const login = async () => {
+  isSubmitting.value = true
+  const { data, error } = await supabase.auth.signInWithPassword({ email: email.value.trim(), password: password.value })
+  if (error) {
+    isSubmitting.value = false
+    errorMessage.value = error.status === 429
+      ? 'Zu viele Anmeldeversuche. Bitte warten Sie einen Moment.'
+      : 'E-Mail-Adresse oder Passwort ist nicht korrekt. Bitte prüfen Sie Ihre Eingaben.'
+    return
+  }
+  const { data: profile } = await supabase.from('profiles').select(PROFILE_COLUMNS).eq('id', data.user.id).single<ProfileRow>()
+  // Deactivated users are signed out again by middleware/auth.global.ts
+  await navigateTo(profile?.rolle === 'admin' ? '/admin' : '/')
 }
 </script>
 
@@ -29,7 +39,7 @@ const login = () => {
             <VehicleIcon type="Großraumtransporter" style="width: 280px; height: 131px; max-width: 100%" />
           </div>
           <p style="font-family: var(--f-head); font-size: 34px; font-weight: 600; line-height: 1.15">Fahrzeuge buchen, übernehmen und zurückgeben.</p>
-          <p style="color: #C9D3E0; font-size: 15px">{{ db.vehicles.length }} Fahrzeuge der SensorTec Automation GmbH, Osnabrück.</p>
+          <p style="color: #C9D3E0; font-size: 15px">Fuhrpark der SensorTec Automation GmbH, Osnabrück.</p>
         </div>
       </div>
       <div class="login-r">
@@ -37,26 +47,22 @@ const login = () => {
           <h1 style="font-size: 36px">Anmelden</h1>
           <p class="muted">Mit Ihrer dienstlichen E-Mail-Adresse.</p>
         </div>
-        <div v-if="hasError" class="meld meld-err" role="alert">
+        <div v-if="errorMessage" id="login-error" class="meld meld-err" role="alert">
           <AppIcon name="error" />
-          <span><strong>Anmeldung fehlgeschlagen</strong>E-Mail-Adresse oder Passwort ist nicht korrekt. Bitte prüfen Sie Ihre Eingaben.</span>
+          <span><strong>Anmeldung fehlgeschlagen</strong>{{ errorMessage }}</span>
         </div>
         <form class="stack" style="gap: 20px" @submit.prevent="login">
-          <div class="feld" :class="{ err: hasError }">
+          <div class="feld" :class="{ err: errorMessage }">
             <label for="email">E-Mail-Adresse</label>
-            <input id="email" v-model="email" class="inp" type="email" required autocomplete="username" :aria-invalid="hasError" aria-describedby="login-error">
+            <input id="email" v-model="email" class="inp" type="email" required autocomplete="username" :aria-invalid="!!errorMessage" aria-describedby="login-error">
           </div>
-          <div class="feld" :class="{ err: hasError }">
-            <div class="row-sb">
-              <label for="password" class="lbl">Passwort</label>
-              <a href="#" class="sm" style="font-weight: 500">Passwort vergessen?</a>
-            </div>
-            <input id="password" v-model="password" class="inp" type="password" required autocomplete="current-password" :aria-invalid="hasError" aria-describedby="login-error">
-            <span v-if="hasError" id="login-error" class="ferr"><AppIcon name="error" />Noch {{ attemptsLeft }} Versuche, danach wird der Zugang für 15 Minuten gesperrt.</span>
+          <div class="feld" :class="{ err: errorMessage }">
+            <label for="password">Passwort</label>
+            <input id="password" v-model="password" class="inp" type="password" required autocomplete="current-password" :aria-invalid="!!errorMessage" aria-describedby="login-error">
           </div>
-          <button class="btn btn-p btn-w" style="min-height: 52px; font-size: 16px" :disabled="!attemptsLeft">Anmelden</button>
+          <button class="btn btn-p btn-w" style="min-height: 52px; font-size: 16px" :disabled="isSubmitting">{{ isSubmitting ? 'Anmelden …' : 'Anmelden' }}</button>
         </form>
-        <p class="hin"><AppIcon name="info" />Noch keinen Zugang? Die Logistik legt ihn für Sie an.</p>
+        <p class="hin"><AppIcon name="info" />Noch keinen Zugang oder Passwort vergessen? Die Logistik hilft Ihnen weiter.</p>
       </div>
     </div>
   </div>

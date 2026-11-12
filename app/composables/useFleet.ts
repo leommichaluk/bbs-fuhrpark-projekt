@@ -1,12 +1,16 @@
-import type { Vehicle } from '~/utils/fleet'
+import type { Profile, Vehicle } from '~/utils/fleet'
 
 // Mock data as shared state. Later: replace with Supabase queries here.
 export const useFleet = () => {
   const db = useState('fleet', () => structuredClone(MOCK_DATA))
   const flashMessage = useState<{ title: string, text?: string } | null>('flashMessage', () => null)
-  const route = useRoute()
-  // ponytail: no login yet – the role follows the route (admin area = Katrin Albers)
-  const currentUser = computed(() => db.value.profiles.find(p => p.id === (route.path.startsWith('/admin') ? 'u-albers' : 'u-wessels'))!)
+  // Signed-in user, loaded from Supabase by middleware/auth.global.ts
+  const profile = useState<Profile | null>('profile', () => null)
+  // ponytail: data is still mock until phase 3 – match the signed-in user to the mock profile with the same email
+  const currentUser = computed(() => {
+    const mockProfile = db.value.profiles.find(p => p.email === profile.value?.email)
+    return { ...profile.value!, id: mockProfile?.id ?? profile.value!.id }
+  })
   const findVehicle = (id: string) => db.value.vehicles.find(v => v.id === id)
   const getStatus = (vehicle: Vehicle) => getDisplayStatus(vehicle, db.value.bookings)
   const userName = (userId: string) => db.value.profiles.find(p => p.id === userId)?.name ?? ''
