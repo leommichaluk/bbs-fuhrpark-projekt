@@ -9,7 +9,8 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!user.value) return navigateTo('/anmeldung')
 
   const profile = useState<Profile | null>('profile', () => null)
-  if (profile.value?.id !== user.value.sub) {
+  const isNewSession = profile.value?.id !== user.value.sub
+  if (isNewSession) {
     const { data } = await useSupabaseClient().from('profiles').select(PROFILE_COLUMNS).eq('id', user.value.sub).single<ProfileRow>()
     profile.value = data && toProfile(data)
   }
@@ -21,5 +22,7 @@ export default defineNuxtRouteMiddleware(async (to) => {
   }
   if (to.path.startsWith('/admin') && profile.value.role !== 'admin') return navigateTo('/')
 
-  await useFleet().reload()
+  // Data younger than 3 s is reused: after a write (which reloads) and on hydration right after the server render.
+  // A new sign-in always loads fresh, so nothing of the previous user's (RLS-filtered) data is shown.
+  await useFleet().reload(isNewSession ? 0 : 3000)
 })

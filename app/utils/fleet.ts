@@ -26,7 +26,7 @@ export interface Vehicle {
 export interface Appointment { id: string, vehicleId: string, type: 'Hauptuntersuchung' | 'Inspektion' | 'UVV-Prüfung' | 'Wartung', dueDate: string, done: boolean }
 export interface Booking { id: string, vehicleId: string, userId: string, from: string, until: string, purpose: string, status: 'gebucht' | 'uebernommen' | 'zurueckgegeben' | 'storniert' }
 export interface Trip { id: string, bookingId: string, vehicleId: string, userId: string, pickupTime: string, pickupMileage: number, returnTime?: string, returnMileage?: number, purpose: string, fuelLevel?: string, note?: string }
-export interface Maintenance { id: string, vehicleId: string, type: 'HU' | 'Inspektion' | 'Wartung' | 'Reparatur' | 'Werkstattaufenthalt', date: string, mileage: number, performedBy: string, description: string }
+export interface Maintenance { id: string, vehicleId: string, type: 'HU' | 'Inspektion' | 'Wartung' | 'Reparatur' | 'Werkstattaufenthalt', date: string, mileage: number, performedBy: string, description: string, cost?: number }
 export interface Profile { id: string, email: string, name: string, role: 'admin' | 'mitarbeiter', active: boolean, department: string }
 
 // ---------- Time ----------
@@ -72,6 +72,7 @@ export const toTrip = (r: Row): Trip => ({
 })
 export const toMaintenance = (r: Row): Maintenance => ({
   id: r.id, vehicleId: r.fahrzeug_id, type: r.art, date: r.datum, mileage: r.kilometerstand, performedBy: r.durchgefuehrt_von, description: r.beschreibung,
+  cost: r.kosten == null ? undefined : Number(r.kosten), // numeric may arrive as string
 })
 export interface ProfileRow { id: string, email: string, name: string, rolle: Profile['role'], aktiv: boolean, abteilung: string }
 export const PROFILE_COLUMNS = 'id, email, name, rolle, aktiv, abteilung'
@@ -108,8 +109,12 @@ export const getAppointmentText = (appointment: Appointment, now = currentLocalT
 // ---------- Validation (mirrors the constraints in migration.md) ----------
 export const findOverlappingBooking = (bookings: Booking[], vehicleId: string, from: string, until: string) =>
   bookings.find(b => b.vehicleId === vehicleId && b.status !== 'storniert' && b.from < until && from < b.until)
+// Pickup only inside the booked period – the same check as the RPC fahrzeug_uebernehmen
+export const canPickUp = (booking: Booking, now = currentLocalTime()) => booking.status === 'gebucht' && booking.from <= now && now <= booking.until
+// Booked but never picked up, and the period is over
+export const isExpired = (booking: Booking, now = currentLocalTime()) => booking.status === 'gebucht' && booking.until < now
 
-export const normalizePlate = (plate: string) => plate.toUpperCase().replace(/\s+/g, ' ').trim()
+export const normalizePlate =(plate: string) => plate.toUpperCase().replace(/\s+/g, ' ').trim()
 export const getPlateError = (plate: string, takenPlates: string[]) => {
   const normalized = normalizePlate(plate)
   if (!normalized) return 'Bitte geben Sie ein Kennzeichen ein.'
@@ -146,6 +151,7 @@ export const pickRangeDay = (range: { start: string, end: string | null }, day: 
 
 // ---------- Formatting ----------
 export const formatKm = (km: number) => km.toLocaleString('de-DE')
+export const formatEuro = (amount: number) => amount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })
 export const formatDate = (date: string) => `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}`
 export const formatTime = (dateTime: string) => dateTime.slice(11, 16)
 export const formatDay = (dateTime: string) => dateTime.slice(0, 10) === currentLocalTime().slice(0, 10)

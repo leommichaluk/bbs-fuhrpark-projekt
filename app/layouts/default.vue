@@ -1,8 +1,12 @@
 <script setup lang="ts">
+import type { Profile } from '~/utils/fleet'
+
 const route = useRoute()
 const supabase = useSupabaseClient()
-const profile = useState('profile')
+const profile = useState<Profile | null>('profile')
 const isAdmin = computed(() => route.path.startsWith('/admin'))
+// Admins use both areas (they book pool vehicles too), so they get a switch; employees never see /admin
+const hasAdminRole = computed(() => profile.value?.role === 'admin')
 // Booking and pickup/return are step flows: on phones they hide the bottom nav and pin their main button instead
 const isFlowPage = computed(() => /^\/(buchen|fahrt\/)/.test(route.path))
 
@@ -41,6 +45,9 @@ const NAV_ITEMS = {
         </ul>
         <div class="side-foot">
           <span class="rolle">{{ isAdmin ? 'Administrator' : 'Mitarbeiter' }}</span>
+          <NuxtLink v-if="hasAdminRole" :to="isAdmin ? '/' : '/admin'">
+            <AppIcon :name="isAdmin ? 'calendarPlus' : 'wrench'" class="i" />{{ isAdmin ? 'Meine Buchungen & Fahrten' : 'Zur Verwaltung' }}
+          </NuxtLink>
           <button type="button" @click="logout"><AppIcon name="logout" class="i" />Abmelden</button>
         </div>
       </nav>
@@ -50,6 +57,9 @@ const NAV_ITEMS = {
     <nav v-if="!isFlowPage" class="mob-nav" aria-label="Hauptnavigation">
       <NuxtLink v-for="item in NAV_ITEMS[isAdmin ? 'admin' : 'employee']" :key="item.to" :to="item.to" :aria-current="item.activePattern.test(route.path) ? 'page' : undefined">
         <span class="ic"><AppIcon :name="item.icon" /></span>{{ item.label }}
+      </NuxtLink>
+      <NuxtLink v-if="hasAdminRole" :to="isAdmin ? '/' : '/admin'">
+        <span class="ic"><AppIcon :name="isAdmin ? 'calendarPlus' : 'wrench'" /></span>{{ isAdmin ? 'Buchen' : 'Verwaltung' }}
       </NuxtLink>
       <button type="button" @click="logout"><span class="ic"><AppIcon name="logout" /></span>Abmelden</button>
     </nav>

@@ -1,13 +1,16 @@
 <script setup lang="ts">
 // Pickup (step 1) and return (step 2) of one's own booking – like fahrzeug_uebernehmen/-zurueckgeben in migration.md
-const { supabase, db, write, currentUser, findVehicle, flashMessage, dueAppointments } = useFleet()
+const { supabase, db, write, isSaving, currentUser, findVehicle, flashMessage, dueAppointments } = useFleet()
+const confirmDialog = useTemplateRef('confirmDialog')
 const route = useRoute()
 const booking = computed(() => db.value.bookings.find(b => b.id === route.params.id && b.userId === currentUser.value.id))
 if (!booking.value || !['gebucht', 'uebernommen'].includes(booking.value.status)) throw createError({ statusCode: 404, statusMessage: 'Buchung nicht gefunden oder abgeschlossen' })
 
 const vehicle = computed(() => findVehicle(booking.value!.vehicleId)!)
 const trip = computed(() => db.value.trips.find(t => t.bookingId === booking.value!.id))
-const isReturn = computed(() => booking.value!.status === 'uebernommen')
+// Fixed when the page opens: after saving, the reloaded booking already has the next status and the page
+// would otherwise flip to the other step until the navigation has finished
+const isReturn = ref(booking.value!.status === 'uebernommen')
 const openAppointments = computed(() => dueAppointments(vehicle.value.id))
 
 const mileage = ref<number | null>(isReturn.value ? null : vehicle.value.mileage)
@@ -23,6 +26,8 @@ const pickupBlockedReason = computed(() =>
       : currentLocalTime() > booking.value!.until ? 'Der Buchungszeitraum ist abgelaufen.'
         : vehicle.value.status !== 'verfuegbar' ? 'Das Fahrzeug ist nicht verfügbar.' : '')
 
+const IMPLAUSIBLE_DISTANCE_KM = 1500
+
 const saveError = ref('')
 // Pickup/return only through the security-definer RPCs: they check booking owner, period, vehicle status and
 // mileage, write the logbook and advance the booking status in one transaction.
@@ -31,6 +36,12 @@ const submit = async () => {
   const wasReturn = isReturn.value
   const km = mileage.value
   const drivenKm = distance.value
+  // The mileage can never be lowered again (DB trigger), so a typo like an extra digit would stick: ask first
+  if ((drivenKm ?? 0) > IMPLAUSIBLE_DISTANCE_KM && !await confirmDialog.value!.ask({
+    title: `Wirklich ${formatKm(km)} km?`,
+    text: `Das wären ${formatKm(drivenKm!)} km mehr als ${wasReturn ? 'bei der Übernahme' : 'zuletzt erfasst'}. Der Kilometerstand lässt sich danach nicht mehr verringern.`,
+    confirmLabel: 'Ja, stimmt',
+  })) return
   saveError.value = await write(() => wasReturn
     ? supabase.rpc('fahrzeug_zurueckgeben', { p_buchung: booking.value!.id, p_km: km, p_tank: fuelLevel.value, p_hinweis: noteForLogistics.value || null })
     : supabase.rpc('fahrzeug_uebernehmen', { p_buchung: booking.value!.id, p_km: km, p_zweck: purpose.value.trim() }))
@@ -64,7 +75,7 @@ const submit = async () => {
             v-model="mileage" :min="referenceMileage" required style="font-size: 20px; height: 56px"
             :label="`Kilometerstand bei ${isReturn ? 'Rückgabe' : 'Übernahme'}`"
             :min-label="isReturn ? 'bei der Übernahme' : 'der zuletzt erfasste'"
-            :hint="!isReturn && mileage === referenceMileage ? 'Stimmt mit der letzten Rückgabe überein.' : ''"
+            :hint="isReturn || distance === null ? '' : distance === 0 ? 'Stimmt mit der letzten Rückgabe überein.' : `${formatKm(distance)} km mehr als bei der letzten Rückgabe – bitte kurz prüfen.`"
           />
           <template v-if="isReturn">
             <div class="gef-box"><span class="b">Gefahren</span><Odometer :km="distance" :digit-count="4" :separator="false" class="zw-l" /></div>
@@ -94,7 +105,9 @@ const submit = async () => {
         </fieldset>
 
         <div class="action-bar">
-          <button class="btn btn-p btn-w" style="min-height: 54px; font-size: 16px" :disabled="mileageTooLow || !!pickupBlockedReason">{{ isReturn ? 'Rückgabe abschließen' : 'Übernahme bestätigen' }}</button>
+          <button class="btn btn-p btn-w" style="min-height: 54px; font-size: 16px" :disabled="mileageTooLow || !!pickupBlockedReason || isSaving">
+            {{ isSaving ? 'Wird gespeichert …' : isReturn ? 'Rückgabe abschließen' : 'Übernahme bestätigen' }}
+          </button>
         </div>
       </form>
 
@@ -108,5 +121,6 @@ const submit = async () => {
         <InspectionBadge v-for="appointment in openAppointments" :key="appointment.id" :appointment="appointment" />
       </aside>
     </div>
+    <ConfirmDialog ref="confirmDialog" />
   </main>
 </template>

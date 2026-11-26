@@ -1,12 +1,14 @@
 <script setup lang="ts">
-const { supabase, db, write, currentUser, findVehicle, flashMessage } = useFleet()
+const { supabase, db, write, isSaving, currentUser, findVehicle, flashMessage } = useFleet()
 const route = useRoute()
 
 const bookableVehicles = computed(() => db.value.vehicles.filter(v => v.pool && v.status === 'verfuegbar'))
 const today = currentLocalTime().slice(0, 10)
 const tomorrow = addDays(today, 1)
+// ?fahrzeug= only preselects a bookable vehicle (an old link may point to one that is now in the workshop)
+const requestedVehicle = bookableVehicles.value.find(v => v.id === route.query.fahrzeug)
 const form = reactive({
-  vehicleId: (route.query.fahrzeug as string) ?? bookableVehicles.value[0]?.id ?? '',
+  vehicleId: requestedVehicle?.id ?? bookableVehicles.value[0]?.id ?? '',
   startDate: tomorrow,
   endDate: tomorrow as string | null, // null while only the start day is picked in the calendar
   startTime: '08:00',
@@ -140,7 +142,7 @@ const book = async () => {
       </fieldset>
 
       <div class="form-foot action-bar">
-        <button class="btn btn-p" :disabled="!isPeriodValid || !!conflictingBooking || form.endDate === null">Buchen</button>
+        <button class="btn btn-p" :disabled="!isPeriodValid || !!conflictingBooking || form.endDate === null || isSaving">{{ isSaving ? 'Wird gebucht …' : 'Buchen' }}</button>
         <NuxtLink class="btn btn-g" to="/">Abbrechen</NuxtLink>
       </div>
     </form>

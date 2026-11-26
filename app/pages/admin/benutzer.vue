@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import type { Profile } from '~/utils/fleet'
 
-const { supabase, db, write, currentUser } = useFleet()
+const { supabase, db, write, isSaving, currentUser } = useFleet()
+const confirmDialog = useTemplateRef('confirmDialog')
 const search = ref('')
 const roleFilter = ref<Profile['role'] | ''>('')
 const filteredUsers = computed(() => db.value.profiles.filter(p =>
@@ -10,6 +11,26 @@ const filteredUsers = computed(() => db.value.profiles.filter(p =>
 const saveError = ref('')
 const updateProfile = async (user: Profile, columns: { aktiv?: boolean, rolle?: Profile['role'] }) => {
   saveError.value = await write(() => supabase.from('profiles').update(columns).eq('id', user.id))
+}
+// Role changes and deactivation change what someone may do, so they are confirmed first; activating is not
+const toggleRole = async (user: Profile) => {
+  const toAdmin = user.role !== 'admin'
+  if (await confirmDialog.value!.ask({
+    title: toAdmin ? `${user.name} zum Admin machen?` : `${user.name} zum Mitarbeiter machen?`,
+    text: toAdmin
+      ? 'Admins sehen alle Fahrten und Namen und können Fahrzeuge, Wartung und Zugänge verwalten.'
+      : 'Der Zugang verliert die Verwaltung und sieht danach nur noch eigene Fahrten.',
+    confirmLabel: toAdmin ? 'Zum Admin machen' : 'Zum Mitarbeiter machen',
+  })) await updateProfile(user, { rolle: toAdmin ? 'admin' : 'mitarbeiter' })
+}
+const toggleActive = async (user: Profile) => {
+  if (user.active && !await confirmDialog.value!.ask({
+    title: `${user.name} deaktivieren?`,
+    text: 'Die Person kann sich danach nicht mehr anmelden und wird beim nächsten Seitenwechsel abgemeldet. Ihre Buchungen bleiben bestehen.',
+    confirmLabel: 'Deaktivieren',
+    danger: true,
+  })) return
+  await updateProfile(user, { aktiv: !user.active })
 }
 </script>
 
@@ -45,8 +66,8 @@ const updateProfile = async (user: Profile, columns: { aktiv?: boolean, rolle?: 
                 <td class="r">
                   <span v-if="user.id === currentUser.id" class="xs muted">Ihr Zugang</span>
                   <template v-else>
-                    <button type="button" class="btn btn-g btn-sm" @click="updateProfile(user, { rolle: user.role === 'admin' ? 'mitarbeiter' : 'admin' })">{{ user.role === 'admin' ? 'Zum Mitarbeiter' : 'Zum Admin' }}</button>
-                    <button type="button" class="btn btn-g btn-sm" @click="updateProfile(user, { aktiv: !user.active })">{{ user.active ? 'Deaktivieren' : 'Aktivieren' }}</button>
+                    <button type="button" class="btn btn-g btn-sm" :disabled="isSaving" @click="toggleRole(user)">{{ user.role === 'admin' ? 'Zum Mitarbeiter' : 'Zum Admin' }}</button>
+                    <button type="button" class="btn btn-g btn-sm" :disabled="isSaving" @click="toggleActive(user)">{{ user.active ? 'Deaktivieren' : 'Aktivieren' }}</button>
                   </template>
                 </td>
               </tr>
@@ -66,5 +87,6 @@ const updateProfile = async (user: Profile, columns: { aktiv?: boolean, rolle?: 
         <p class="hin"><AppIcon name="info" />Name und Abteilung kommen aus den Metadaten (<code>name</code>) bzw. werden später ergänzt.</p>
       </aside>
     </div>
+    <ConfirmDialog ref="confirmDialog" />
   </main>
 </template>

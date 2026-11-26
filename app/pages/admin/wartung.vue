@@ -1,24 +1,25 @@
 <script setup lang="ts">
 import type { Appointment, Maintenance } from '~/utils/fleet'
 
-const { supabase, db, write, findVehicle, flashMessage } = useFleet()
+const { supabase, db, write, isSaving, findVehicle, flashMessage } = useFleet()
 const route = useRoute()
 
 // Maintenance type → the appointment it completes (null = no new deadline)
-const MAINTENANCE_TYPES = { HU: 'Hauptuntersuchung', Inspektion: 'Inspektion', Wartung: null, Reparatur: null } as const
+const MAINTENANCE_TYPES = { HU: 'Hauptuntersuchung', Inspektion: 'Inspektion', Wartung: 'Wartung', Reparatur: null } as const
 const activeVehicles = computed(() => db.value.vehicles.filter(v => v.status !== 'ausser_betrieb'))
 const form = reactive({
-  vehicleId: (route.query.fahrzeug as string) ?? activeVehicles.value[0]?.id ?? '',
+  vehicleId: activeVehicles.value.find(v => v.id === route.query.fahrzeug)?.id ?? activeVehicles.value[0]?.id ?? '',
   type: 'HU' as keyof typeof MAINTENANCE_TYPES,
   date: currentLocalTime().slice(0, 10),
   mileage: null as number | null,
   performedBy: '',
   description: '',
+  cost: '' as number | '', // '' = no amount (v-model.number on an empty field)
   nextDueDate: '',
 })
 const vehicle = computed(() => findVehicle(form.vehicleId)!)
 const appointmentType = computed(() => MAINTENANCE_TYPES[form.type])
-// Suggest the next deadline: HU in 2 years, Inspektion in 1 year
+// Suggest the next deadline: HU in 2 years, Inspektion and Wartung in 1 year
 watchEffect(() => {
   const year = String(+form.date.slice(0, 4) + (form.type === 'HU' ? 2 : 1))
   form.nextDueDate = form.type === 'HU' ? `${year}-${form.date.slice(5, 7)}` : `${year}${form.date.slice(4)}`
@@ -54,6 +55,7 @@ const save = async () => {
       kilometerstand: form.mileage,
       durchgefuehrt_von: form.performedBy,
       beschreibung: form.description,
+      kosten: form.cost === '' ? null : form.cost,
     }),
     // Mileage never decreases (DB trigger), so only raise it
     () => supabase.from('fahrzeuge').update({ kilometerstand: Math.max(form.mileage!, vehicle.value.mileage) }).eq('id', vehicle.value.id),
@@ -103,9 +105,15 @@ const save = async () => {
             </div>
             <MileageInput v-model="form.mileage" label="Kilometerstand" :min="vehicle.mileage" required />
           </div>
-          <div class="feld">
-            <label for="performed-by">Durchgeführt von</label>
-            <input id="performed-by" v-model="form.performedBy" class="inp" required>
+          <div class="f2">
+            <div class="feld">
+              <label for="performed-by">Durchgeführt von</label>
+              <input id="performed-by" v-model="form.performedBy" class="inp" required>
+            </div>
+            <div class="feld">
+              <label for="cost">Kosten <span class="opt">(optional)</span></label>
+              <div class="einheit"><input id="cost" v-model.number="form.cost" class="inp num" type="number" min="0" step="0.01"><span>€</span></div>
+            </div>
           </div>
           <div class="feld">
             <label for="description">Beschreibung <span class="opt">(optional)</span></label>
@@ -117,7 +125,7 @@ const save = async () => {
           <legend><b>3</b>Neue Frist</legend>
           <div class="f2">
             <div class="feld">
-              <label for="next-due">{{ form.type === 'HU' ? 'Nächste HU (Monat/Jahr)' : 'Nächste Inspektion' }}</label>
+              <label for="next-due">{{ form.type === 'HU' ? 'Nächste HU (Monat/Jahr)' : `Nächste ${appointmentType}` }}</label>
               <input id="next-due" v-model="form.nextDueDate" class="inp num" :type="form.type === 'HU' ? 'month' : 'date'" required>
             </div>
             <div class="feld">
@@ -128,7 +136,7 @@ const save = async () => {
         </fieldset>
 
         <div class="form-foot">
-          <button class="btn btn-p" :disabled="mileageTooLow">Eintrag speichern</button>
+          <button class="btn btn-p" :disabled="mileageTooLow || isSaving">{{ isSaving ? 'Wird gespeichert …' : 'Eintrag speichern' }}</button>
           <NuxtLink class="btn btn-g" :to="`/admin/fahrzeuge/${form.vehicleId}`">Abbrechen</NuxtLink>
         </div>
       </form>

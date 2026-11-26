@@ -40,7 +40,7 @@ TypeScript: the root `tsconfig.json` only references `.nuxt/tsconfig.*.json` (Nu
 
 - Nuxt 4 `app/` directory layout: file-based routes in `app/pages/`, auto-imported `components/`, `composables/`, `utils/`. One layout (`app/layouts/default.vue`, sidebar nav that switches between employee and admin items by route); `anmeldung.vue` uses `layout: false`. Each page's root element is `<main class="main">` and starts with `<PageHeader>`.
 - Modules: only `@nuxtjs/supabase`. Tailwind v4 via `@tailwindcss/vite`, entry `app/assets/css/main.css`.
-- Shared components (`app/components/`): `PageHeader` (title, back link, user, flash message), `AppIcon`, `VehicleIcon`, `VehicleHero`, `VehicleChip`, `StatusBadge`, `InspectionBadge`, `Odometer`, `MileageInput` (`v-model` is `number | null`, parses "86.240"), `LogbookTable`, `BookingRow`, `TabBar`, `SearchField`, `EmptyState`. Reuse them before writing markup.
+- Shared components (`app/components/`): `PageHeader` (title, back link, user, flash message), `AppIcon`, `VehicleIcon`, `VehicleHero`, `VehicleChip`, `StatusBadge`, `InspectionBadge`, `Odometer`, `MileageInput` (`v-model` is `number | null`, parses "86.240"), `LogbookTable`, `BookingRow`, `TabBar`, `SearchField`, `EmptyState`, `ConfirmDialog` (`<ConfirmDialog ref="confirmDialog" />` + `await confirmDialog.value!.ask({ title, text, confirmLabel, danger })` → `true`/`false`; used before cancelling, deactivating, role changes and implausible mileage). Reuse them before writing markup.
 
 ### Routes
 
@@ -61,15 +61,16 @@ TypeScript: the root `tsconfig.json` only references `.nuxt/tsconfig.*.json` (Nu
 ### Auth
 
 - `@nuxtjs/supabase` with `redirect: true` sends signed-out users to `/anmeldung` (`redirectOptions` in `nuxt.config.ts`).
-- `app/middleware/auth.global.ts` loads the user's row from `profiles` once per session into `useState('profile')`, signs out deactivated users (`/anmeldung?grund=deaktiviert`), redirects non-admins away from `/admin/*`, and reloads the fleet data on every navigation.
+- `app/middleware/auth.global.ts` loads the user's row from `profiles` once per session into `useState('profile')`, signs out deactivated users (`/anmeldung?grund=deaktiviert`), redirects non-admins away from `/admin/*`, and reloads the fleet data on every navigation (`reload(3000)`: data younger than 3 s is reused, e.g. right after a write or on hydration; a new sign-in always loads fresh).
 - `useSupabaseUser()` (v2) returns JWT claims: the user id is `user.value.sub`, not `.id`.
-- The sidebar shows admin or employee navigation by route; admins can open employee pages too.
+- The sidebar shows admin or employee navigation by route; admins can open employee pages too and get a link to switch between both areas (sidebar foot, phone nav).
 
 ### Data access (`useFleet`, `app/utils/fleet.ts`)
 
 - `useFleet()` holds all tables in `useState('fleet')` as `db.value.{vehicles, appointments, bookings, trips, maintenanceRecords, profiles}` and returns helpers (`findVehicle`, `getStatus`, `userName`, `runningBooking`, `activeBookings`, `dueAppointments`), `currentUser`, `flashMessage`, the shared `supabase` client, `reload()`, `write()` and `cancelBooking()`. RLS decides what each user gets (employees: all vehicles/bookings, only their own trips and profile).
 - Reading: `reload()` loads every table and maps rows with `toVehicle`, `toBooking`, … (German snake_case → English camelCase). Never read Supabase rows directly in pages. `ponytail:` loading everything per navigation is fine for a few dozen vehicles; move to per-page queries or Realtime when data grows.
-- Writing: `const message = await write(() => supabase.from('…').insert/update(...), …)` runs operations in order, stops at the first error, reloads on success and returns a German error text (`toUserMessage`: 23P01 overlap, 23505 duplicate plate, 42501 permission, SQL `raise exception` texts pass through) or `''`. Pages show it in a `meld meld-err` box. Write payloads use the German column names.
+- Writing: `const message = await write(() => supabase.from('…').insert/update(...), …)` runs operations in order, stops at the first error, reloads on success and returns a German error text (`toUserMessage`: 23P01 overlap, 23505 duplicate plate, 42501 permission, SQL `raise exception` texts pass through) or `''`. Pages show it in a `meld meld-err` box. Write payloads use the German column names. While `write()` runs, `isSaving` is `true`: disable submit/action buttons with it so a double click can't save twice.
+- Bookings: `canPickUp(booking)` (inside the booked period, same check as the pickup RPC) decides whether "Übernehmen" is offered; `isExpired(booking)` marks bookings that were never picked up and are over.
 - Pickup/return must call the RPCs `fahrzeug_uebernehmen` / `fahrzeug_zurueckgeben`, never write `fahrten`/`buchungen` directly.
 - Time: the app works with Berlin wall-clock strings `YYYY-MM-DDTHH:MM` (same format as `<input type="datetime-local">`, comparable as strings). `toLocalDateTime(timestamp)` converts DB timestamps (pinned to Europe/Berlin, so SSR and browser agree), `toTimestamp(local)` converts back for writes, `currentLocalTime()` is "now".
 - Client-side checks mirror the DB rules (overlap, mileage never decreasing, plate format/uniqueness) for live feedback; the DB constraints stay the real guard.
