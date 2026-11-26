@@ -34,7 +34,7 @@ Tests cover only pure logic in `app/utils/fleet.ts` and import it with the `.ts`
 
 TypeScript: the root `tsconfig.json` only references `.nuxt/tsconfig.*.json` (Nuxt 4 layout). If the IDE reports `Cannot find module '~/…'`, run `npx nuxi prepare` and restart the TS server. `test/` is added to the node tsconfig via `typescript.nodeTsConfig` in `nuxt.config.ts` (`allowImportingTsExtensions`, `@types/node`).
 
-`.env` must contain `NUXT_PUBLIC_SUPABASE_URL` and `NUXT_PUBLIC_SUPABASE_KEY` (publishable key, from Supabase → Project Settings → API). No secret/service key is used anywhere.
+`.env` must contain `SUPABASE_URL` and `SUPABASE_KEY` (publishable key, from Supabase → Project Settings → API), wired explicitly in `nuxt.config.ts` (`supabase.url/key`, read at build time). Do not use the `NUXT_PUBLIC_` names. The values still reach the browser by design (direct Supabase client + RLS). No secret/service key is used anywhere.
 
 ## Architecture
 

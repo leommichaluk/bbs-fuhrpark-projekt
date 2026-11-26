@@ -36,11 +36,11 @@ npm install
 Datei `.env` im Projektordner erstellen:
 
 ```
-NUXT_PUBLIC_SUPABASE_URL=https://<projekt>.supabase.co
-NUXT_PUBLIC_SUPABASE_KEY=<publishable key>
+SUPABASE_URL=https://<projekt>.supabase.co
+SUPABASE_KEY=<publishable key>
 ```
 
-Die Werte stehen im Supabase-Dashboard unter **Project Settings → API**. Nur den öffentlichen (publishable) Key eintragen, nie den Secret/Service-Key.
+Die Werte stehen im Supabase-Dashboard unter **Project Settings → API**. Nur den öffentlichen (publishable) Key eintragen, nie den Secret/Service-Key. Beide Werte landen bewusst im Browser (die App spricht direkt mit Supabase, die Daten schützt RLS). Sie werden beim Build eingelesen – nach einer Änderung den Dev-Server neu starten bzw. neu deployen.
 
 | | Befehl |
 |---|---|
