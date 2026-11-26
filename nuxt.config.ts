@@ -23,6 +23,10 @@ export default defineNuxtConfig({
   },
   vite: { plugins: [tailwindcss()] },
   supabase: {
+    // Read at build time from SUPABASE_URL / SUPABASE_KEY (publishable key). Both still reach the browser,
+    // which is intended: the client talks to Supabase directly, RLS protects the data.
+    url: process.env.SUPABASE_URL,
+    key: process.env.SUPABASE_KEY,
     // Nicht angemeldet → /anmeldung; Profil laden und Admin-Bereich schützen: app/middleware/auth.global.ts
     redirect: true,
     redirectOptions: { login: '/anmeldung', callback: '/anmeldung' },
