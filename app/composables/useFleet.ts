@@ -22,10 +22,16 @@ export const useFleet = () => {
   // Signed-in user, loaded from Supabase by middleware/auth.global.ts
   const profile = useState<Profile | null>('profile', () => null)
   const currentUser = computed(() => profile.value!)
+  // True while write() runs: pages disable their submit buttons so a double click can't save twice
+  const isSaving = useState('isSaving', () => false)
+  const loadedAt = useState('fleetLoadedAt', () => 0)
 
   // ponytail: loads all tables on every navigation – fine for a fleet of a few dozen vehicles;
   // switch to per-page queries or Supabase Realtime when the data grows.
-  const reload = async () => {
+  // maxAgeMs skips the load when the data is that fresh (e.g. the navigation right after a write,
+  // or the client run of the middleware right after the server render).
+  const reload = async (maxAgeMs = 0) => {
+    if (Date.now() - loadedAt.value < maxAgeMs) return
     const results = await Promise.all([
       supabase.from('fahrzeuge').select('*').order('kennzeichen'),
       supabase.from('termine').select('*'),
@@ -45,17 +51,24 @@ export const useFleet = () => {
       maintenanceRecords: maintenanceRecords!.map(toMaintenance),
       profiles: profiles!.map(row => toProfile(row as ProfileRow)),
     }
+    loadedAt.value = Date.now()
   }
 
   // Runs Supabase writes in order, stops at the first error and reloads the data on success.
   // Returns a German error message for the UI, '' on success.
   const write = async (...operations: (() => PromiseLike<{ error: { code?: string, message: string } | null }>)[]) => {
-    for (const operation of operations) {
-      const { error } = await operation()
-      if (error) return toUserMessage(error)
+    isSaving.value = true
+    try {
+      for (const operation of operations) {
+        const { error } = await operation()
+        if (error) return toUserMessage(error)
+      }
+      await reload()
+      return ''
     }
-    await reload()
-    return ''
+    finally {
+      isSaving.value = false
+    }
   }
 
   // Employees may only cancel their own bookings that are still 'gebucht' (RLS policy buchungen_cancel)
@@ -70,5 +83,5 @@ export const useFleet = () => {
     .filter(b => b.vehicleId === vehicleId && (b.status === 'gebucht' || b.status === 'uebernommen'))
     .sort((a, b) => a.from.localeCompare(b.from))
   const dueAppointments = (vehicleId: string) => db.value.appointments.filter(a => a.vehicleId === vehicleId && !a.done && getAppointmentStatus(a) !== 'ok')
-  return { supabase, db, reload, write, cancelBooking, flashMessage, currentUser, findVehicle, getStatus, userName, runningBooking, activeBookings, dueAppointments }
+  return { supabase, db, reload, write, isSaving, cancelBooking, flashMessage, currentUser, findVehicle, getStatus, userName, runningBooking, activeBookings, dueAppointments }
 }

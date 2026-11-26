@@ -1,16 +1,27 @@
 <script setup lang="ts">
-import type { Vehicle } from '~/utils/fleet'
+import type { Booking, Vehicle } from '~/utils/fleet'
 
-const { db, currentUser, findVehicle, cancelBooking, getStatus, runningBooking } = useFleet()
+const { db, currentUser, findVehicle, cancelBooking, isSaving, getStatus, runningBooking } = useFleet()
+const confirmDialog = useTemplateRef('confirmDialog')
 const cancelError = ref('')
-const cancel = async (bookingId: string) => { cancelError.value = await cancelBooking(bookingId) }
+const cancel = async (booking: Booking) => {
+  const confirmed = await confirmDialog.value!.ask({
+    title: 'Buchung stornieren?',
+    text: `${findVehicle(booking.vehicleId)?.name}, ${formatPeriod(booking.from, booking.until)} Uhr. Das Fahrzeug ist danach für andere wieder frei.`,
+    confirmLabel: 'Stornieren',
+    danger: true,
+  })
+  if (confirmed) cancelError.value = await cancelBooking(booking.id)
+}
 const search = ref('')
 
 const myBookings = computed(() => db.value.bookings.filter(b => b.userId === currentUser.value.id).sort((a, b) => a.from.localeCompare(b.from)))
 const activeBooking = computed(() => myBookings.value.find(b => b.status === 'uebernommen'))
 const activeVehicle = computed(() => activeBooking.value && findVehicle(activeBooking.value.vehicleId))
 const pickupMileage = computed(() => db.value.trips.find(t => t.bookingId === activeBooking.value?.id)?.pickupMileage ?? null)
-const nextBooking = computed(() => myBookings.value.find(b => b.status === 'gebucht'))
+// Expired bookings (never picked up) are not "next" anymore
+const nextBooking = computed(() => myBookings.value.find(b => b.status === 'gebucht' && !isExpired(b)))
+const isNextReady = computed(() => !!nextBooking.value && canPickUp(nextBooking.value))
 const nextVehicle = computed(() => nextBooking.value && findVehicle(nextBooking.value.vehicleId))
 
 const poolVehicles = computed(() => db.value.vehicles.filter(v =>
@@ -49,6 +60,25 @@ const availabilityToday = (vehicle: Vehicle) => {
           <NuxtLink class="btn btn-s" :to="`/fahrzeuge/${activeVehicle.id}`">Fahrtenbuch ansehen</NuxtLink>
         </div>
       </section>
+      <!-- Without a running trip the wide column would stay empty: say what's next instead -->
+      <section v-else class="card-dark fahrt" aria-labelledby="no-trip-heading" style="padding: 28px">
+        <div class="fahrt-face"><VehicleIcon :type="isNextReady ? nextVehicle!.type : 'Kombi'" class="fzi-m" /></div>
+        <div class="stack" style="flex: 1 1 260px; gap: 12px">
+          <template v-if="isNextReady">
+            <StatusBadge status="ok" label="Bereit zur Übernahme" style="align-self: flex-start; background: #fff" />
+            <h2 id="no-trip-heading" style="font-size: 30px">{{ nextVehicle!.name }}</h2>
+            <div class="row" style="gap: 10px"><span class="kzt">{{ nextVehicle!.plate }}</span><span class="muted sm">{{ formatPeriod(nextBooking!.from, nextBooking!.until) }} Uhr</span></div>
+          </template>
+          <template v-else>
+            <h2 id="no-trip-heading" style="font-size: 30px">Keine laufende Fahrt</h2>
+            <p class="muted">Buchen Sie ein Poolfahrzeug. Zu Beginn der Buchung übernehmen Sie es hier mit dem Kilometerstand.</p>
+          </template>
+        </div>
+        <div class="row" style="flex-basis: 100%; border-top: 1px solid #3A4C66; padding-top: 20px">
+          <NuxtLink v-if="isNextReady" class="btn btn-p" :to="`/fahrt/${nextBooking!.id}`">Fahrzeug übernehmen</NuxtLink>
+          <NuxtLink v-else class="btn btn-p" to="/buchen">Poolfahrzeug buchen</NuxtLink>
+        </div>
+      </section>
 
       <section class="card next" aria-labelledby="next-booking-heading">
         <h2 id="next-booking-heading" style="font-size: 22px">Nächste Buchung</h2>
@@ -57,8 +87,9 @@ const availabilityToday = (vehicle: Vehicle) => {
           <div class="row"><VehicleChip :vehicle="nextVehicle" /></div>
           <p class="sm">Zweck: {{ nextBooking.purpose }}</p>
           <div class="row" style="border-top: 1px solid var(--line); padding-top: 14px">
+            <NuxtLink v-if="isNextReady" class="btn btn-p btn-sm" :to="`/fahrt/${nextBooking.id}`">Übernehmen</NuxtLink>
             <NuxtLink class="btn btn-s btn-sm" to="/buchungen">Alle Buchungen</NuxtLink>
-            <button type="button" class="btn btn-g btn-sm" @click="cancel(nextBooking.id)">Stornieren</button>
+            <button type="button" class="btn btn-g btn-sm" :disabled="isSaving" @click="cancel(nextBooking)">Stornieren</button>
           </div>
         </template>
         <template v-else>
@@ -84,10 +115,12 @@ const availabilityToday = (vehicle: Vehicle) => {
             <span class="sub">{{ vehicle.type }} · {{ vehicle.seats }} Sitze · {{ vehicle.plate }}</span>
             <span class="tm"><span :class="`mk mk-${getStatus(vehicle)}`" aria-hidden="true" />{{ availabilityToday(vehicle) }}</span>
           </div>
-          <NuxtLink v-if="getStatus(vehicle) === 'ok'" class="btn btn-p" :to="`/buchen?fahrzeug=${vehicle.id}`">Buchen</NuxtLink>
+          <!-- A vehicle someone else is driving right now can still be booked for later -->
+          <NuxtLink v-if="vehicle.status === 'verfuegbar' && runningBooking(vehicle.id)?.userId !== currentUser.id" class="btn btn-p" :to="`/buchen?fahrzeug=${vehicle.id}`">Buchen</NuxtLink>
           <NuxtLink v-else class="btn btn-s" :to="`/fahrzeuge/${vehicle.id}`">Details</NuxtLink>
         </div>
       </div>
     </section>
+    <ConfirmDialog ref="confirmDialog" />
   </main>
 </template>

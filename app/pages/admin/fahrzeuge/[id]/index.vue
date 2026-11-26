@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { supabase, db, write, findVehicle, userName, flashMessage, runningBooking, activeBookings } = useFleet()
+const { supabase, db, write, isSaving, findVehicle, userName, flashMessage, runningBooking, activeBookings } = useFleet()
 const route = useRoute()
 const vehicle = computed(() => findVehicle(route.params.id as string))
 if (!vehicle.value) throw createError({ statusCode: 404, statusMessage: 'Fahrzeug nicht gefunden' })
@@ -13,6 +13,7 @@ const heroDetail = computed(() => activeBooking.value
   : vehicle.value!.statusNote)
 const appointments = computed(() => db.value.appointments.filter(a => a.vehicleId === vehicle.value!.id && !a.done).sort((a, b) => a.dueDate.localeCompare(b.dueDate)))
 const maintenanceHistory = computed(() => db.value.maintenanceRecords.filter(m => m.vehicleId === vehicle.value!.id).sort((a, b) => b.date.localeCompare(a.date)))
+const totalCost = computed(() => maintenanceHistory.value.reduce((sum, entry) => sum + (entry.cost ?? 0), 0))
 const openBookings = computed(() => activeBookings(vehicle.value!.id))
 const trips = computed(() => db.value.trips.filter(t => t.vehicleId === vehicle.value!.id).sort((a, b) => b.pickupTime.localeCompare(a.pickupTime)))
 const lastTrip = computed(() => trips.value[0])
@@ -21,12 +22,14 @@ const lastTrip = computed(() => trips.value[0])
 const decommissionDialog = ref<HTMLDialogElement>()
 const decommissionDate = ref(currentLocalTime().slice(0, 10))
 const decommissionReason = ref('Verkauf geplant')
-const affectedBookings = computed(() => openBookings.value.filter(b => b.status === 'gebucht' && b.from >= decommissionDate.value))
+// Every booking that is not over before the chosen day (also multi-day bookings that started earlier)
+const affectedBookings = computed(() => openBookings.value.filter(b => b.status === 'gebucht' && b.until > decommissionDate.value))
 const saveError = ref('')
 const decommission = async () => {
+  if (activeBooking.value) return
   const affectedIds = affectedBookings.value.map(b => b.id)
   saveError.value = await write(
-    () => supabase.from('buchungen').update({ status: 'storniert' }).in('id', affectedIds),
+    ...(affectedIds.length ? [() => supabase.from('buchungen').update({ status: 'storniert' }).in('id', affectedIds)] : []),
     () => supabase.from('fahrzeuge').update({
       status: 'ausser_betrieb',
       status_notiz: `seit ${formatDate(decommissionDate.value)} · ${decommissionReason.value}`,
@@ -39,7 +42,9 @@ const decommission = async () => {
 }
 const recommission = async () => {
   saveError.value = await write(() => supabase.from('fahrzeuge').update({ status: 'verfuegbar', status_notiz: null }).eq('id', vehicle.value!.id))
+  if (!saveError.value) recommissioned.value = true
 }
+const recommissioned = ref(false)
 </script>
 
 <template>
@@ -50,6 +55,10 @@ const recommission = async () => {
       <AppIcon name="error" />
       <span><strong>Speichern fehlgeschlagen</strong>{{ saveError }}</span>
     </div>
+    <div v-else-if="recommissioned" class="meld meld-ok" role="status">
+      <AppIcon name="check" />
+      <span><strong>Wieder in Betrieb</strong>{{ vehicle.name }} kann wieder gebucht werden.</span>
+    </div>
 
     <VehicleHero :vehicle="vehicle" :detail="heroDetail">
       <template #mileage>
@@ -57,9 +66,10 @@ const recommission = async () => {
       </template>
       <template #actions>
         <NuxtLink class="btn btn-s" :to="`/admin/fahrzeuge/${vehicle.id}/bearbeiten`">Bearbeiten</NuxtLink>
-        <NuxtLink class="btn btn-s" :to="`/admin/wartung?fahrzeug=${vehicle.id}`">Wartung erfassen</NuxtLink>
+        <!-- The maintenance form only lists vehicles in service -->
+        <NuxtLink v-if="vehicle.status !== 'ausser_betrieb'" class="btn btn-s" :to="`/admin/wartung?fahrzeug=${vehicle.id}`">Wartung erfassen</NuxtLink>
         <span class="spacer" />
-        <button v-if="vehicle.status === 'ausser_betrieb'" type="button" class="btn btn-s" @click="recommission">Wieder in Betrieb nehmen</button>
+        <button v-if="vehicle.status === 'ausser_betrieb'" type="button" class="btn btn-s" :disabled="isSaving" @click="recommission">Wieder in Betrieb nehmen</button>
         <button v-else type="button" class="btn btn-rs" @click="decommissionDialog!.showModal()">Außer Betrieb nehmen</button>
       </template>
     </VehicleHero>
@@ -68,7 +78,7 @@ const recommission = async () => {
 
     <section class="card" role="tabpanel" :aria-label="activeTab">
       <template v-if="activeTab === 'Termine'">
-        <div class="card-h"><h2>Termine</h2><NuxtLink class="btn btn-p btn-sm" :to="`/admin/wartung?fahrzeug=${vehicle.id}`">Termin erledigt erfassen</NuxtLink></div>
+        <div class="card-h"><h2>Termine</h2><NuxtLink v-if="vehicle.status !== 'ausser_betrieb'" class="btn btn-p btn-sm" :to="`/admin/wartung?fahrzeug=${vehicle.id}`">Termin erledigt erfassen</NuxtLink></div>
         <div v-if="vehicle.status === 'ausser_betrieb'" class="meld meld-info"><AppIcon name="info" /><span>Fristen ruhen, solange das Fahrzeug außer Betrieb ist.</span></div>
         <div v-else class="g3">
           <div v-for="appointment in appointments" :key="appointment.id" class="termin"><InspectionBadge :appointment="appointment" /></div>
@@ -77,13 +87,18 @@ const recommission = async () => {
       </template>
 
       <template v-else-if="activeTab === 'Historie'">
-        <div class="card-h"><h2>Historie</h2><NuxtLink class="btn btn-s btn-sm" :to="`/admin/wartung?fahrzeug=${vehicle.id}`">Eintrag erfassen</NuxtLink></div>
-        <div class="hist sm muted b"><span>Datum</span><span>Art</span><span>km</span><span>Durchgeführt</span></div>
+        <div class="card-h">
+          <h2>Historie</h2>
+          <span v-if="totalCost" class="sm muted">Kosten gesamt <strong class="num" style="color: var(--ink)">{{ formatEuro(totalCost) }}</strong></span>
+          <NuxtLink v-if="vehicle.status !== 'ausser_betrieb'" class="btn btn-s btn-sm" :to="`/admin/wartung?fahrzeug=${vehicle.id}`">Eintrag erfassen</NuxtLink>
+        </div>
+        <div class="hist hist-h sm muted b"><span>Datum</span><span>Art</span><span>km</span><span>Durchgeführt</span><span class="r">Kosten</span></div>
         <div v-for="entry in maintenanceHistory" :key="entry.id" class="hist">
           <span class="num">{{ formatDate(entry.date) }}</span>
           <StatusBadge :status="entry.type === 'Reparatur' ? 'werkstatt' : 'ok'" :label="entry.type" style="justify-self: start" />
           <span class="num">{{ formatKm(entry.mileage) }}</span>
           <span>{{ [entry.performedBy, entry.description].filter(Boolean).join(' · ') }}</span>
+          <span class="num r">{{ entry.cost == null ? '–' : formatEuro(entry.cost) }}</span>
         </div>
         <p v-if="!maintenanceHistory.length" class="muted" style="padding-top: 14px">Noch keine Einträge.</p>
       </template>
@@ -132,7 +147,11 @@ const recommission = async () => {
           <p id="decommission-text" class="muted">Das Fahrzeug kann danach nicht mehr gebucht werden. Fristen ruhen, bis es wieder in Betrieb genommen wird.</p>
         </div>
       </div>
-      <div v-if="affectedBookings.length" class="meld meld-warn">
+      <div v-if="activeBooking" class="meld meld-err" role="alert">
+        <AppIcon name="error" />
+        <span><strong>Fahrzeug ist gerade unterwegs</strong>{{ userName(activeBooking.userId) }} gibt es bis {{ formatUntil(activeBooking.until) }} zurück. Erst danach außer Betrieb nehmen.</span>
+      </div>
+      <div v-else-if="affectedBookings.length" class="meld meld-warn">
         <AppIcon name="warning" />
         <span><strong>{{ affectedBookings.length }} künftige Buchung{{ affectedBookings.length > 1 ? 'en werden' : ' wird' }} storniert</strong>{{ affectedBookings.map(b => `${formatDay(b.from)} (${userName(b.userId)})`).join(', ') }}</span>
       </div>
@@ -149,7 +168,7 @@ const recommission = async () => {
         </div>
         <div class="dlg-foot">
           <button type="button" class="btn btn-s" @click="decommissionDialog!.close()">Abbrechen</button>
-          <button class="btn btn-r">Außer Betrieb nehmen</button>
+          <button class="btn btn-r" :disabled="!!activeBooking || isSaving">Außer Betrieb nehmen</button>
         </div>
       </form>
     </dialog>

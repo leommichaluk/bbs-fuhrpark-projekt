@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Appointment, VehicleType } from '~/utils/fleet'
 
-const { supabase, db, write, findVehicle, userName, flashMessage } = useFleet()
+const { supabase, db, write, isSaving, findVehicle, userName, flashMessage } = useFleet()
 const route = useRoute()
 const vehicleId = route.params.id as string
 const existingVehicle = findVehicle(vehicleId)
@@ -16,6 +16,8 @@ const form = reactive({
   type: existingVehicle?.type ?? 'Kombi' as VehicleType,
   isPool: existingVehicle?.pool ?? false,
   mileage: existingVehicle?.mileage ?? null,
+  fuelType: existingVehicle?.fuelType ?? '',
+  fuelCard: existingVehicle?.fuelCard ?? '', // only the last 4 digits are stored
   nextInspectionMonth: findOpenAppointment('Hauptuntersuchung')?.dueDate.slice(0, 7) ?? '',
   nextServiceDate: findOpenAppointment('Inspektion')?.dueDate ?? '',
 })
@@ -27,11 +29,12 @@ const lastReturnedTrip = db.value.trips
   .sort((a, b) => b.returnTime!.localeCompare(a.returnTime!))[0]
 const plateError = computed(() => getPlateError(form.plate, db.value.vehicles.filter(v => v.id !== vehicleId).map(v => v.plate)))
 const mileageTooLow = computed(() => form.mileage !== null && form.mileage < lastMileage)
-const errorCount = computed(() => (plateError.value ? 1 : 0) + (mileageTooLow.value || form.mileage === null ? 1 : 0))
+const fuelCardError = computed(() => form.fuelCard && !/^\d{4}$/.test(form.fuelCard.trim()) ? 'Bitte nur die letzten 4 Ziffern der Karte eingeben.' : '')
+const errorCount = computed(() => (plateError.value ? 1 : 0) + (mileageTooLow.value || form.mileage === null ? 1 : 0) + (fuelCardError.value ? 1 : 0))
 const isComplete = computed(() => !!form.manufacturer.trim() && !!form.model.trim() && !!form.buildYear)
 
 const save = async () => {
-  if (errorCount.value || !isComplete.value) return
+  if (errorCount.value || !isComplete.value || isSaving.value) return
   const columns = {
     kennzeichen: normalizePlate(form.plate),
     hersteller: form.manufacturer.trim(),
@@ -40,11 +43,18 @@ const save = async () => {
     typ: form.type,
     pool: form.isPool,
     kilometerstand: form.mileage,
+    kraftstoff: form.fuelType || null,
+    tankkarte: form.fuelCard.trim() || null,
   }
+  // The vehicle row is saved outside write() (its id is needed for the appointments), so lock the button here
+  isSaving.value = true
   const { data, error } = existingVehicle
     ? await supabase.from('fahrzeuge').update(columns).eq('id', vehicleId).select('id').single()
     : await supabase.from('fahrzeuge').insert(columns).select('id').single()
-  if (error) return (saveError.value = toUserMessage(error))
+  if (error) {
+    isSaving.value = false
+    return (saveError.value = toUserMessage(error))
+  }
 
   // Deadlines are kept as open appointments
   const deadlines = [['Hauptuntersuchung', form.nextInspectionMonth && `${form.nextInspectionMonth}-01`], ['Inspektion', form.nextServiceDate]] as const
@@ -85,7 +95,7 @@ const save = async () => {
             <label for="plate">Kennzeichen</label>
             <input id="plate" v-model="form.plate" class="inp" style="font-family: var(--f-head); font-size: 18px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase" :aria-invalid="!!plateError" aria-describedby="plate-message">
             <span v-if="form.plate && plateError" id="plate-message" class="ferr"><AppIcon name="error" />{{ plateError }}</span>
-            <span v-else-if="form.plate" id="plate-message" class="fok"><AppIcon name="check" />Kennzeichen ist frei.</span>
+            <span v-else-if="form.plate && normalizePlate(form.plate) !== existingVehicle?.plate" id="plate-message" class="fok"><AppIcon name="check" />Kennzeichen ist frei.</span>
           </div>
           <div class="f2">
             <div class="feld">
@@ -97,9 +107,18 @@ const save = async () => {
               <input id="model" v-model="form.model" class="inp" required>
             </div>
           </div>
-          <div class="feld">
-            <label for="build-year">Baujahr</label>
-            <input id="build-year" v-model.number="form.buildYear" class="inp num" type="number" min="1950" max="2100" required style="max-width: 160px">
+          <div class="f2">
+            <div class="feld">
+              <label for="build-year">Baujahr</label>
+              <input id="build-year" v-model.number="form.buildYear" class="inp num" type="number" min="1950" max="2100" required>
+            </div>
+            <div class="feld">
+              <label for="fuel-type">Kraftstoff <span class="opt">(optional)</span></label>
+              <select id="fuel-type" v-model="form.fuelType" class="inp">
+                <option value="">–</option>
+                <option v-for="fuel in ['Diesel', 'Benzin', 'Elektro', 'Hybrid']" :key="fuel">{{ fuel }}</option>
+              </select>
+            </div>
           </div>
           <div class="f2">
             <div class="feld">
@@ -120,7 +139,7 @@ const save = async () => {
           <legend><b>2</b>Kilometerstand</legend>
           <MileageInput
             v-model="form.mileage" label="Aktueller Kilometerstand" :min="lastMileage"
-            :hint="existingVehicle && form.mileage !== null ? `${formatKm(form.mileage - lastMileage)} km seit der letzten Erfassung.` : ''"
+            :hint="existingVehicle && form.mileage !== null && form.mileage > lastMileage ? `${formatKm(form.mileage - lastMileage)} km seit der letzten Erfassung.` : ''"
           />
         </fieldset>
 
@@ -139,8 +158,19 @@ const save = async () => {
           <p class="hin"><AppIcon name="info" />30 Tage vor einer Frist wird das Fahrzeug als „fällig“ markiert.</p>
         </fieldset>
 
+        <fieldset class="fs">
+          <legend><b>4</b>Tankkarte</legend>
+          <div class="feld" :class="{ err: fuelCardError }" style="max-width: 320px">
+            <label for="fuel-card">Kartennummer, letzte 4 Ziffern <span class="opt">(optional)</span></label>
+            <input id="fuel-card" v-model="form.fuelCard" class="inp num" inputmode="numeric" maxlength="4" placeholder="4471" :aria-invalid="!!fuelCardError" aria-describedby="fuel-card-message">
+            <span v-if="fuelCardError" id="fuel-card-message" class="ferr"><AppIcon name="error" />{{ fuelCardError }}</span>
+          </div>
+        </fieldset>
+
         <div class="form-foot">
-          <button class="btn btn-p" :disabled="!!errorCount || !isComplete">{{ existingVehicle ? 'Änderungen speichern' : 'Fahrzeug anlegen' }}</button>
+          <button class="btn btn-p" :disabled="!!errorCount || !isComplete || isSaving">
+            {{ isSaving ? 'Wird gespeichert …' : existingVehicle ? 'Änderungen speichern' : 'Fahrzeug anlegen' }}
+          </button>
           <NuxtLink class="btn btn-g" :to="existingVehicle ? `/admin/fahrzeuge/${vehicleId}` : '/admin'">Abbrechen</NuxtLink>
         </div>
       </form>

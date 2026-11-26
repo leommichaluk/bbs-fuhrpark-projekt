@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import type { Booking } from '../app/utils/fleet.ts'
 import {
   calendarDays, eachDay, pickRangeDay, shiftMonth,
-  findOverlappingBooking, getAppointmentStatus, getDisplayStatus, getPlateError, parseMileage,
+  canPickUp, findOverlappingBooking, getAppointmentStatus, getDisplayStatus, getPlateError, isExpired, parseMileage,
   toBooking, toLocalDateTime, toTimestamp, toUserMessage, toVehicle,
 } from '../app/utils/fleet.ts'
 
@@ -84,4 +84,15 @@ test('date range by clicks: start, end, earlier day restarts, third click starts
   assert.deepEqual(pickRangeDay(first, '2026-11-26'), { start: '2026-11-24', end: '2026-11-26' })
   assert.deepEqual(pickRangeDay(first, '2026-11-24'), { start: '2026-11-24', end: '2026-11-24' })
   assert.deepEqual(pickRangeDay(first, '2026-11-22'), { start: '2026-11-22', end: null })
+})
+
+test('pickup only inside the booked period, afterwards the booking counts as expired', () => {
+  const planned = booking('b1', '2026-10-14T08:00', '2026-10-14T16:00')
+  assert.equal(canPickUp(planned, '2026-10-14T07:59'), false)
+  assert.equal(canPickUp(planned, '2026-10-14T08:00'), true)
+  assert.equal(canPickUp(planned, '2026-10-14T16:00'), true)
+  assert.equal(canPickUp({ ...planned, status: 'uebernommen' }, '2026-10-14T09:00'), false)
+  assert.equal(isExpired(planned, '2026-10-14T16:00'), false)
+  assert.equal(isExpired(planned, '2026-10-14T16:01'), true)
+  assert.equal(isExpired({ ...planned, status: 'storniert' }, '2026-10-15T09:00'), false)
 })

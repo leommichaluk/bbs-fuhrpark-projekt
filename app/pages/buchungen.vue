@@ -1,7 +1,18 @@
 <script setup lang="ts">
-const { db, currentUser, findVehicle, cancelBooking } = useFleet()
+import type { Booking } from '~/utils/fleet'
+
+const { db, currentUser, findVehicle, cancelBooking, isSaving } = useFleet()
+const confirmDialog = useTemplateRef('confirmDialog')
 const cancelError = ref('')
-const cancel = async (bookingId: string) => { cancelError.value = await cancelBooking(bookingId) }
+const cancel = async (booking: Booking) => {
+  const confirmed = await confirmDialog.value!.ask({
+    title: 'Buchung stornieren?',
+    text: `${findVehicle(booking.vehicleId)?.name}, ${formatPeriod(booking.from, booking.until)} Uhr. Das Fahrzeug ist danach für andere wieder frei.`,
+    confirmLabel: 'Stornieren',
+    danger: true,
+  })
+  if (confirmed) cancelError.value = await cancelBooking(booking.id)
+}
 
 const openBookings = computed(() => db.value.bookings
   .filter(b => b.userId === currentUser.value.id && (b.status === 'gebucht' || b.status === 'uebernommen'))
@@ -33,11 +44,12 @@ const tripsInMonth = computed(() => allMyTrips.value.filter(t => t.pickupTime.st
       <div v-for="booking in openBookings" :key="booking.id" class="bk">
         <VehicleChip :vehicle="findVehicle(booking.vehicleId)!" :subtitle="`${findVehicle(booking.vehicleId)!.plate} · ${booking.purpose}`" />
         <span class="d">{{ formatPeriod(booking.from, booking.until) }}</span>
-        <StatusBadge status="gebucht" :label="booking.status === 'uebernommen' ? 'läuft' : 'gebucht'" />
+        <StatusBadge v-if="isExpired(booking)" status="aus" label="abgelaufen" />
+        <StatusBadge v-else status="gebucht" :label="booking.status === 'uebernommen' ? 'läuft' : 'gebucht'" />
         <NuxtLink v-if="booking.status === 'uebernommen'" class="btn btn-p btn-sm" :to="`/fahrt/${booking.id}`">Zurückgeben</NuxtLink>
         <template v-else>
-          <NuxtLink v-if="booking.from.slice(0, 10) === currentLocalTime().slice(0, 10)" class="btn btn-p btn-sm" :to="`/fahrt/${booking.id}`">Übernehmen</NuxtLink>
-          <button type="button" class="btn btn-g btn-sm" @click="cancel(booking.id)">Stornieren</button>
+          <NuxtLink v-if="canPickUp(booking)" class="btn btn-p btn-sm" :to="`/fahrt/${booking.id}`">Übernehmen</NuxtLink>
+          <button type="button" class="btn btn-g btn-sm" :disabled="isSaving" @click="cancel(booking)">{{ isExpired(booking) ? 'Entfernen' : 'Stornieren' }}</button>
         </template>
       </div>
     </section>
@@ -46,11 +58,12 @@ const tripsInMonth = computed(() => allMyTrips.value.filter(t => t.pickupTime.st
       <div class="card-h">
         <h2 id="trips-heading">Meine Fahrten</h2>
         <label class="vh" for="month">Monat</label>
-        <select id="month" v-model="selectedMonth" class="chip">
+        <select v-if="months.length" id="month" v-model="selectedMonth" class="chip">
           <option v-for="month in months" :key="month" :value="month">{{ monthLabel(month) }}</option>
         </select>
       </div>
       <LogbookTable :trips="tripsInMonth" column="vehicle" :total-label="`Summe ${monthLabel(selectedMonth).split(' ')[0]}`" />
     </section>
+    <ConfirmDialog ref="confirmDialog" />
   </main>
 </template>
