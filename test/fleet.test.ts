@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Booking } from '../app/utils/fleet.ts'
 import {
+  calendarDays, eachDay, pickRangeDay, shiftMonth,
   findOverlappingBooking, getAppointmentStatus, getDisplayStatus, getPlateError, parseMileage,
   toBooking, toLocalDateTime, toTimestamp, toUserMessage, toVehicle,
 } from '../app/utils/fleet.ts'
@@ -64,4 +65,23 @@ test('DB errors become German UI messages', () => {
   assert.match(toUserMessage({ code: '23P01', message: 'conflicting key value violates exclusion constraint' }), /überschneidet/)
   assert.match(toUserMessage({ code: '23505', message: 'duplicate key' }), /Kennzeichen/)
   assert.equal(toUserMessage({ code: 'P0001', message: 'Außerhalb des Buchungszeitraums.' }), 'Außerhalb des Buchungszeitraums.')
+})
+
+test('calendar grid: 6 weeks from the Monday before the 1st, month shifting across years', () => {
+  const november = calendarDays('2026-11') // 1 Nov 2026 is a Sunday
+  assert.equal(november.length, 42)
+  assert.equal(november[0], '2026-10-26')
+  assert.equal(november[6], '2026-11-01')
+  assert.equal(calendarDays('2026-06')[0], '2026-06-01') // starts on a Monday itself
+  assert.equal(shiftMonth('2026-12', 1), '2027-01')
+  assert.equal(shiftMonth('2026-01', -1), '2025-12')
+  assert.deepEqual(eachDay('2026-10-24T08:00', '2026-10-26T17:00'), ['2026-10-24', '2026-10-25', '2026-10-26']) // DST weekend
+})
+
+test('date range by clicks: start, end, earlier day restarts, third click starts over', () => {
+  const first = pickRangeDay({ start: '2026-11-20', end: '2026-11-20' }, '2026-11-24')
+  assert.deepEqual(first, { start: '2026-11-24', end: null })
+  assert.deepEqual(pickRangeDay(first, '2026-11-26'), { start: '2026-11-24', end: '2026-11-26' })
+  assert.deepEqual(pickRangeDay(first, '2026-11-24'), { start: '2026-11-24', end: '2026-11-24' })
+  assert.deepEqual(pickRangeDay(first, '2026-11-22'), { start: '2026-11-22', end: null })
 })

@@ -72,6 +72,12 @@ svg.i{width:20px;height:20px;flex:none}
 .side-foot .rolle{font-size:12.5px;color:#A9B6C8;text-transform:uppercase;letter-spacing:.08em;font-weight:600}
 
 .main{flex:999 1 560px;min-width:0;padding:30px 36px 44px;display:flex;flex-direction:column;gap:24px}
+/* Desktop: the rounded app frame keeps its edges, only the content area scrolls */
+@media (min-width:861px){
+  .screen{height:100vh;height:100dvh;overflow:hidden}
+  .app{height:100%;min-height:0;flex-wrap:nowrap}
+  .main{overflow-y:auto}
+}
 .top{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
 .top h1{font-size:36px;margin-right:auto}
 .top .zurueck{display:inline-flex;align-items:center;gap:6px;font-size:14px;color:var(--ink-2);text-decoration:none;font-weight:500;min-height:32px}
@@ -242,7 +248,7 @@ select.chip{appearance:none;padding-right:38px;background-image:url("data:image/
 .reiter button[aria-selected="true"]{background:var(--navy);color:#fff}
 
 /* ---------- Tabelle ---------- */
-.tb-wrap{overflow-x:auto}
+.tb-wrap{overflow-x:auto;position:relative}
 .tb{width:100%;border-collapse:separate;border-spacing:0;font-size:14.5px}
 .tb th{text-align:left;font-size:12.5px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em;padding:0 16px 12px;border-bottom:1.5px solid var(--line);white-space:nowrap}
 .tb td{padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -264,7 +270,7 @@ select.chip{appearance:none;padding-right:38px;background-image:url("data:image/
 .lnk svg{width:18px;height:18px}
 
 /* ---------- Fahrtenbuch (linierte Tabelle, doppelte Randlinie) ---------- */
-.fb-wrap{overflow-x:auto;border-radius:10px}
+.fb-wrap{overflow-x:auto;position:relative;border-radius:10px}
 .fb{width:100%;border-collapse:collapse;border:4px double var(--navy);font-size:14px;background:#fff}
 .fb th{text-align:left;padding:10px 14px;background:var(--grund);border-bottom:4px double var(--navy);border-right:1px solid var(--line);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2);white-space:nowrap}
 .fb td{padding:11px 14px;border-bottom:1px solid #C9D2DD;border-right:1px solid var(--line);vertical-align:top}
@@ -346,6 +352,8 @@ select.chip{appearance:none;padding-right:38px;background-image:url("data:image/
 .login{display:flex;flex-wrap:wrap;width:min(1040px,100%);background:#fff;border-radius:32px;overflow:hidden;box-shadow:0 24px 60px rgba(17,27,42,.12)}
 .login-l{flex:1 1 380px;background:var(--navy);color:#fff;padding:48px;display:flex;flex-direction:column;gap:28px}
 .login-r{flex:1 1 420px;padding:56px 56px 48px;display:flex;flex-direction:column;gap:24px}
+.login-screen{display:flex;align-items:center;justify-content:center;padding:48px 24px}
+.login-intro{margin-top:auto;display:flex;flex-direction:column;gap:18px}
 .rolle-t{display:inline-flex;align-items:center;height:28px;padding:0 12px;border-radius:999px;font-size:13px;font-weight:600;background:var(--grund);color:var(--ink-2)}
 .rolle-a{background:var(--navy);color:#fff}
 .hero{display:flex;flex-wrap:wrap;gap:32px;align-items:center}
@@ -368,9 +376,46 @@ select.chip{appearance:none;padding-right:38px;background-image:url("data:image/
 .due .m{display:flex;flex-direction:column;gap:4px;flex:1;min-width:0}
 .due-status{display:flex;align-items:center;gap:6px;font-weight:600;min-width:0}
 .due-status > span:last-child{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.alt{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
-.alt:last-of-type{border-bottom:0}
-.alt .m{display:flex;flex-direction:column;gap:3px;flex:1;min-width:0}
+/* Fahrzeugwahl als Karten (Artboard T-Buchen), echte Radio-Buttons */
+.wahl{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.wk{position:relative;display:flex;align-items:center;gap:14px;padding:12px 16px 12px 12px;border:2px solid var(--line);border-radius:18px;background:#fff;cursor:pointer}
+.wk:hover{border-color:var(--line-2)}
+.wk input{position:absolute;opacity:0;pointer-events:none}
+.wk .ico{width:76px;height:48px;border-radius:12px}
+.wk .fzi-s{width:64px;height:30px}
+.wk .m{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.wk:has(input:checked){border-color:var(--navy);background:var(--sky-soft)}
+.wk:has(input:checked) .ico{background:#fff}
+.wk:has(input:focus-visible){outline:3px solid var(--navy);outline-offset:2px}
+.wk-frei{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ink-2)}
+
+/* Kalender mit Zeitraum (DateRangeCalendar) */
+.kal{display:flex;flex-direction:column;gap:8px}
+.kal-h{display:flex;align-items:center;justify-content:space-between}
+.kal-h strong{font-family:var(--f-head);font-size:19px;font-weight:600}
+.kal-wt,.kal-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));row-gap:4px}
+.kal-wt span{text-align:center;font-size:12px;font-weight:600;color:var(--ink-3);text-transform:uppercase;letter-spacing:.06em}
+.kal-tag{position:relative;height:44px;border:0;border-radius:12px;background:transparent;font-family:var(--f-num);font-size:14.5px;color:var(--ink);cursor:pointer}
+.kal-tag:hover:not(:disabled){background:var(--grund)}
+.kal-tag.kal-out{color:var(--ink-3)}
+.kal-tag:disabled{color:#B5BFCC;cursor:default}
+.kal-tag.kal-heute{box-shadow:inset 0 0 0 1.5px var(--line-2)}
+.kal-tag.kal-drin{background:var(--sky-soft);border-radius:0}
+.kal-tag.kal-start,.kal-tag.kal-ende{background:var(--navy);color:#fff;font-weight:600}
+.kal-tag.kal-start:not(.kal-ende){border-radius:12px 0 0 12px}
+.kal-tag.kal-ende:not(.kal-start){border-radius:0 12px 12px 0}
+.kal-tag.kal-belegt::after{content:"";position:absolute;left:50%;bottom:5px;width:6px;height:6px;margin-left:-3px;border-radius:1.5px;background:var(--blau)}
+.kal-tag.kal-start.kal-belegt::after,.kal-tag.kal-ende.kal-belegt::after{background:var(--sky)}
+
+/* Buchen: Fahrzeug und Zeitraum nebeneinander, wenn Platz ist */
+.buchen-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px;align-items:start}
+.buchen-grid > .fs + .fs{border-top:0;padding-top:0}
+.buchen-grid + .fs{border-top:1px solid var(--line);padding-top:26px}
+.buchen-grid .wahl{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+@media (max-width:1180px){
+  .buchen-grid{grid-template-columns:minmax(0,1fr);gap:28px}
+  .buchen-grid > .fs + .fs{border-top:1px solid var(--line);padding-top:26px}
+}
 .bk{display:flex;align-items:center;gap:18px;padding:16px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
 .bk:last-child{border-bottom:0}
 .bk .m{display:flex;flex-direction:column;gap:3px;flex:1 1 220px;min-width:0}
@@ -389,3 +434,47 @@ dialog.dlg{border:0;color:inherit}
 dialog.dlg:not([open]){display:none}
 dialog.dlg::backdrop{background:rgba(17,27,42,.58)}
 button:disabled{opacity:.5;cursor:not-allowed}
+
+/* ---------- Smartphone (≤ 640 px), nach den Artboards P-* ---------- */
+.mob-nav{display:none}
+@media (max-width:860px){ .flow-vehicle{order:-1} }
+@media (max-width:640px){
+  .side{display:none}
+  .app{overflow:visible} /* overflow:hidden (for the rounded frame) would break position:sticky of .action-bar */
+  .main{padding:0 16px 112px;gap:16px}
+  .card{padding:16px}
+  .f2{grid-template-columns:minmax(0,1fr)}
+  .seg button{padding:0 12px}
+  .schritt{font-size:13px;padding:8px 10px}
+
+  /* Kopf wie .mob-top: dunkel, runde Ecken unten, randlos */
+  .top{background:var(--navy);color:#fff;margin:0 -16px;padding:18px 20px 22px;border-radius:0 0 26px 26px;gap:14px}
+  .top h1{font-size:28px}
+  .top .zurueck{color:#C9D3E0}
+  .top .suche{width:100%;order:3;border:0;height:46px}
+  .top .wer .n{display:none}
+  .top .avatar{width:36px;height:36px;font-size:14px;border:0;box-shadow:none;background:var(--sky);color:var(--navy)}
+
+  /* Navigation unten (.mob-nav) */
+  .mob-nav{display:flex;justify-content:space-around;position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid var(--line);padding:8px 8px calc(14px + env(safe-area-inset-bottom))}
+  .mob-nav a,.mob-nav button{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:72px;min-height:54px;padding:4px 0 0;color:var(--ink-2);text-decoration:none;font-size:12.5px;font-weight:500;background:none;border:0;cursor:pointer}
+  .mob-nav .ic{display:grid;place-items:center;width:56px;height:30px;border-radius:var(--r-pill)}
+  .mob-nav svg{width:21px;height:21px}
+  .mob-nav [aria-current="page"]{color:var(--navy);font-weight:600}
+  .mob-nav [aria-current="page"] .ic{background:var(--sky)}
+
+  /* Abläufe (Buchen, Übernahme, Rückgabe): Hauptbutton klebt unten (.mob-foot) */
+  .main:has(.action-bar){padding-bottom:24px}
+  .action-bar{position:sticky;bottom:0;z-index:5;margin:0 -16px -16px;padding:12px 16px calc(16px + env(safe-area-inset-bottom));background:#fff;border-top:1px solid var(--line);border-radius:0 0 var(--r-card) var(--r-card)}
+  .action-bar .btn-p{flex:1}
+  .hero-bild{flex:1 1 100%;padding:12px}
+  .hero-bild .fzi-l{width:100%;max-width:320px;height:auto;aspect-ratio:120/56}
+  .gef-box{padding:14px 16px}
+
+  /* Anmeldung: Formular sofort sichtbar, nur das Logo bleibt vom dunklen Teil */
+  .login-screen{padding:0;align-items:stretch}
+  .login{border-radius:0;box-shadow:none;min-height:100vh;align-content:flex-start}
+  .login-l{flex-basis:100%;padding:20px;border-radius:0 0 26px 26px}
+  .login-intro{display:none}
+  .login-r{padding:28px 20px}
+}

@@ -11,7 +11,7 @@ flashMessage.value = null
   <header class="top">
     <div v-if="backTo" style="display: flex; flex-direction: column; gap: 4px; margin-right: auto">
       <NuxtLink class="zurueck" :to="backTo"><AppIcon name="chevronLeft" class="i" style="width: 16px; height: 16px" />{{ backLabel }}</NuxtLink>
-      <h1 style="font-size: 36px">{{ title }}</h1>
+      <h1>{{ title }}</h1>
     </div>
     <h1 v-else>{{ title }}</h1>
     <slot />

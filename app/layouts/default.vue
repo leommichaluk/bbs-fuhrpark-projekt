@@ -3,6 +3,8 @@ const route = useRoute()
 const supabase = useSupabaseClient()
 const profile = useState('profile')
 const isAdmin = computed(() => route.path.startsWith('/admin'))
+// Booking and pickup/return are step flows: on phones they hide the bottom nav and pin their main button instead
+const isFlowPage = computed(() => /^\/(buchen|fahrt\/)/.test(route.path))
 
 const logout = async () => {
   await supabase.auth.signOut()
@@ -44,5 +46,12 @@ const NAV_ITEMS = {
       </nav>
       <slot />
     </div>
+    <!-- Phone navigation (≤ 640 px), replaces the sidebar -->
+    <nav v-if="!isFlowPage" class="mob-nav" aria-label="Hauptnavigation">
+      <NuxtLink v-for="item in NAV_ITEMS[isAdmin ? 'admin' : 'employee']" :key="item.to" :to="item.to" :aria-current="item.activePattern.test(route.path) ? 'page' : undefined">
+        <span class="ic"><AppIcon :name="item.icon" /></span>{{ item.label }}
+      </NuxtLink>
+      <button type="button" @click="logout"><span class="ic"><AppIcon name="logout" /></span>Abmelden</button>
+    </nav>
   </div>
 </template>
