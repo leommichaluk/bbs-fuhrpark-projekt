@@ -27,14 +27,14 @@ const login = async () => {
 </script>
 
 <template>
-  <div class="screen" style="display: flex; align-items: center; justify-content: center; padding: 48px 24px">
+  <div class="screen login-screen">
     <div class="login">
       <div class="login-l">
         <div class="logo" style="padding: 0">
           <span class="logo-mark"><AppIcon name="car" /></span>
           <span class="logo-t">SensorTec<span>Fuhrpark</span></span>
         </div>
-        <div style="margin-top: auto; display: flex; flex-direction: column; gap: 18px">
+        <div class="login-intro">
           <div style="background: var(--grund); border-radius: 22px; padding: 22px 26px; align-self: flex-start">
             <VehicleIcon type="Großraumtransporter" style="width: 280px; height: 131px; max-width: 100%" />
           </div>

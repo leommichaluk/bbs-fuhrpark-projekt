@@ -122,6 +122,28 @@ export const parseMileage = (input: string) => {
   return Number.isNaN(mileage) ? null : mileage
 }
 
+// ---------- Calendar (dates are 'YYYY-MM-DD', months 'YYYY-MM'; computed in UTC, so no DST shifts) ----------
+export const addDays = (date: string, days: number) => new Date(Date.parse(date) + days * 864e5).toISOString().slice(0, 10)
+export const shiftMonth = (month: string, by: number) => {
+  const date = new Date(`${month}-01`)
+  date.setUTCMonth(date.getUTCMonth() + by)
+  return date.toISOString().slice(0, 7)
+}
+// Always 6 weeks starting on the Monday on or before the 1st, so the grid height never jumps
+export const calendarDays = (month: string) => {
+  const first = `${month}-01`
+  const mondayOffset = (new Date(first).getUTCDay() + 6) % 7
+  return Array.from({ length: 42 }, (_, i) => addDays(first, i - mondayOffset))
+}
+export const eachDay = (from: string, until: string) => {
+  const days: string[] = []
+  for (let day = from.slice(0, 10); day <= until.slice(0, 10); day = addDays(day, 1)) days.push(day)
+  return days
+}
+// Range by clicks: 1st click = start, 2nd click = end (an earlier day restarts), next click starts over
+export const pickRangeDay = (range: { start: string, end: string | null }, day: string) =>
+  range.end !== null || day < range.start ? { start: day, end: null } : { start: range.start, end: day }
+
 // ---------- Formatting ----------
 export const formatKm = (km: number) => km.toLocaleString('de-DE')
 export const formatDate = (date: string) => `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}`

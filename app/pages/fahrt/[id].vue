@@ -54,7 +54,7 @@ const submit = async () => {
     </ol>
 
     <div class="g-main">
-      <form class="card form" style="padding: 28px" @submit.prevent="submit">
+      <form class="card form" @submit.prevent="submit">
         <div v-if="saveError" class="meld meld-err" role="alert"><AppIcon name="error" /><span><strong>Speichern fehlgeschlagen</strong>{{ saveError }}</span></div>
         <div v-else-if="pickupBlockedReason" class="meld meld-err" role="alert"><AppIcon name="error" /><span><strong>Übernahme nicht möglich</strong>{{ pickupBlockedReason }}</span></div>
 
@@ -93,10 +93,12 @@ const submit = async () => {
           </div>
         </fieldset>
 
-        <button class="btn btn-p btn-w" style="min-height: 54px; font-size: 16px" :disabled="mileageTooLow || !!pickupBlockedReason">{{ isReturn ? 'Rückgabe abschließen' : 'Übernahme bestätigen' }}</button>
+        <div class="action-bar">
+          <button class="btn btn-p btn-w" style="min-height: 54px; font-size: 16px" :disabled="mileageTooLow || !!pickupBlockedReason">{{ isReturn ? 'Rückgabe abschließen' : 'Übernahme bestätigen' }}</button>
+        </div>
       </form>
 
-      <aside class="card stack" aria-label="Fahrzeug">
+      <aside class="card stack flow-vehicle" aria-label="Fahrzeug">
         <div class="hero-bild"><VehicleIcon :type="vehicle.type" class="fzi-m" /></div>
         <div class="row-sb">
           <span class="stack-s" style="gap: 2px"><strong style="font-size: 18px">{{ vehicle.name }}</strong><span class="xs muted">{{ formatPeriod(booking.from, booking.until) }} Uhr</span></span>

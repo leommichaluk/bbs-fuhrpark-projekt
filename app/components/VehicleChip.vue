@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Vehicle } from '~/utils/fleet'
 
-// Small silhouette + model + subline; the parent row (.alt, .bk, .fzc, .next) does the layout
+// Small silhouette + model + subline; the parent row (.bk, .fzc, .next) does the layout
 defineProps<{ vehicle: Vehicle, subtitle?: string }>()
 </script>
 
